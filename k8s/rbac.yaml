@@ -1,0 +1,58 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: opendesk-predictive-agent
+  namespace: opendesk-predictive-agent
+  labels:
+    app.kubernetes.io/name: opendesk-predictive-agent
+    app.kubernetes.io/component: operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: opendesk-predictive-agent
+  labels:
+    app.kubernetes.io/name: opendesk-predictive-agent
+    app.kubernetes.io/component: operator
+rules:
+  # Core resources — read-only (get, list, watch)
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events", "namespaces", "nodes", "services", "endpoints", "configmaps"]
+    verbs: ["get", "list", "watch"]
+  # Workloads
+  - apiGroups: ["apps"]
+    resources: ["deployments", "daemonsets", "statefulsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  # Batch
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  # Metrics (metrics.k8s.io — for kubectl top)
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list", "watch"]
+  # Storage (read-only)
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses", "volumeattachments"]
+    verbs: ["get", "list", "watch"]
+  # Networking (read-only)
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: opendesk-predictive-agent
+  labels:
+    app.kubernetes.io/name: opendesk-predictive-agent
+    app.kubernetes.io/component: operator
+subjects:
+  - kind: ServiceAccount
+    name: opendesk-predictive-agent
+    namespace: opendesk-predictive-agent
+roleRef:
+  kind: ClusterRole
+  name: opendesk-predictive-agent
+  apiGroup: rbac.authorization.k8s.io

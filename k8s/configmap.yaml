@@ -1,0 +1,33 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opendesk-predictive-agent-config
+  namespace: opendesk-predictive-agent
+  labels:
+    app.kubernetes.io/name: opendesk-predictive-agent
+    app.kubernetes.io/component: operator
+data:
+  # LLM backend configuration
+  LLM_BACKEND: "ollama"
+  OLLAMA_URL: "http://ollama.llm.svc.cluster.local:11434"
+  OLLAMA_MODEL: "qwen3-30b-a3b:latest"
+  OLLAMA_TIMEOUT: "180"
+
+  # Reconcile configuration
+  RECONCILE_INTERVAL: "60"
+  ANALYSIS_TTL: "300"
+  ANALYSIS_TTL_MAX: "1200"
+  MAX_PODS_PER_CYCLE: "3"
+  LOG_VERBOSITY: "info"
+
+  # Prediction configuration
+  PREDICTION_ENABLED: "true"
+  PREDICTION_RISK_THRESHOLD: "0.5"
+
+  # Kalman filter tuning
+  KALMAN_PROCESS_NOISE: "1.0"
+  KALMAN_MEASUREMENT_NOISE: "100.0"
+
+  # Watch namespaces (comma-separated)
+  OPERATOR_WATCH_NAMESPACES: "opendesk,opendesk-edu,default,llm,monitoring,backup,kube-system"

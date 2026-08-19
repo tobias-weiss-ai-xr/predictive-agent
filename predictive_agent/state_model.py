@@ -92,6 +92,7 @@ class PodTracker:
         self.name = name
         self.pod_key = f"{namespace}/{name}"
         self.state = "HEALTHY"
+        self.prev_state = "HEALTHY"
         self.kalman_memory = KalmanTrend()
         self.kalman_cpu = KalmanTrend()
         self.memory_pct = 0.0
@@ -127,6 +128,7 @@ class PodTracker:
         self.cpu_pct = (cpu_m / 1000) * 100
 
         # Classify state
+        self.prev_state = self.state
         self.state = classify_state(
             memory_pct=self.memory_pct,
             cpu_pct=self.cpu_pct,

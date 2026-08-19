@@ -72,8 +72,8 @@ pkgs.dockerTools.buildLayeredImage {
     Cmd = [];
     Env = [
       "OPERATOR_VERSION=4.0.0"
-      "OPERATOR_NAME=opendesk-dev-agent"
-      "OPERATOR_NAMESPACE=opendesk-dev-agent"
+      "OPERATOR_NAME=opendesk-predictive-agent"
+      "OPERATOR_NAMESPACE=opendesk-predictive-agent"
       "OPERATOR_WATCH_NAMESPACES=opendesk,opendesk-edu,default,llm"
       "LLM_BACKEND=ollama"
       "OLLAMA_URL=http://ollama.llm.svc.cluster.local:11434"

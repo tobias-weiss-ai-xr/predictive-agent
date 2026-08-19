@@ -1,0 +1,9 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: opendesk-predictive-agent
+  labels:
+    app.kubernetes.io/name: opendesk-predictive-agent
+    app.kubernetes.io/component: operator
+    opendesk.org/component: predictive-monitor

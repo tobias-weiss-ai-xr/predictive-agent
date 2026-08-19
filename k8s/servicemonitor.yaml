@@ -1,0 +1,19 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: opendesk-predictive-agent
+  namespace: opendesk-predictive-agent
+  labels:
+    app.kubernetes.io/name: opendesk-predictive-agent
+    app.kubernetes.io/component: operator
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: opendesk-predictive-agent
+      app.kubernetes.io/component: operator
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
