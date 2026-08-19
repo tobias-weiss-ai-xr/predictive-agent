@@ -191,8 +191,12 @@ class StateModel:
 
     def update_pod(self, namespace, name, memory_mib, memory_limit_mib, cpu_m,
                    restart_count, log_errors, node_pressure):
-        """Update pod metrics and return the tracker."""
+        """Update pod metrics and return the tracker.
+
+        Records Markov chain state transitions when the pod's state changes.
+        """
         tracker = self.track_pod(namespace, name)
+        prev_state = tracker.state
         tracker.update(
             memory_mib=memory_mib,
             memory_limit_mib=memory_limit_mib,
@@ -201,6 +205,9 @@ class StateModel:
             log_errors=log_errors,
             node_pressure=node_pressure
         )
+        # Record Markov transition when state changes
+        if tracker.state != prev_state:
+            self.markov.record_transition(prev_state, tracker.state)
         return tracker
 
     def to_dict(self):
