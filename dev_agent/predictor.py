@@ -1,7 +1,8 @@
 """Prediction engine combining Kalman trends, Markov state, and Bayesian risk."""
 
-import math
 from dataclasses import dataclass
+from typing import Optional
+
 from dev_agent.kalman import KalmanTrend
 from dev_agent.markov import MarkovChain
 from dev_agent.risk import calculate_risk
@@ -9,22 +10,10 @@ from dev_agent.risk import calculate_risk
 
 @dataclass
 class PredictionResult:
-    """Prediction result for a pod.
-
-    Args:
-        pod_key: Pod identifier (namespace/name)
-        risk_score: Bayesian risk score (0.0 to 0.99)
-        ttf_minutes: Estimated time to failure in minutes, or None if not predictable
-        confidence: Confidence in the prediction (0.0 to 1.0)
-        markov_state: Current Markov state
-        memory_trend: Memory usage trend (MiB/min)
-        cpu_trend: CPU usage trend (millicores/min)
-        memory_pct: Current memory percentage
-        cpu_pct: Current CPU percentage
-    """
+    """Prediction result for a single pod."""
     pod_key: str
     risk_score: float
-    ttf_minutes: float | None
+    ttf_minutes: Optional[int]
     confidence: float
     markov_state: str
     memory_trend: float
@@ -36,52 +25,52 @@ class PredictionResult:
 class Predictor:
     """Prediction engine combining multiple signals."""
 
-    def __init__(self, risk_threshold=0.5):
+    def __init__(self, risk_threshold: float = 0.5):
         """Initialize predictor.
 
         Args:
-            risk_threshold: Threshold for considering a pod at risk (0.0 to 1.0)
+            risk_threshold: Risk score threshold for "at risk" classification.
         """
         self.risk_threshold = risk_threshold
-        self.predictions = {}
-        self.markov = MarkovChain()
+        self._predictions: dict[str, PredictionResult] = {}
 
-    def predict(self, pod_key, memory_pct, memory_trend_mib_per_min, memory_limit_mib,
-                memory_mib, cpu_pct, restart_rate_per_hr, log_error_rate_per_min,
-                node_memory_pressure, node_disk_pressure, markov_state, markov_p_critical,
-                markov_p_failed):
-        """Generate prediction for a pod.
+    def predict(
+        self,
+        pod_key: str,
+        memory_pct: float,
+        memory_trend_mib_per_min: float,
+        memory_limit_mib: int,
+        memory_mib: int,
+        cpu_pct: float,
+        restart_rate_per_hr: float,
+        log_error_rate_per_min: float,
+        node_memory_pressure: bool,
+        node_disk_pressure: bool,
+        markov_state: str,
+        markov_p_critical: float,
+        markov_p_failed: float,
+    ) -> PredictionResult:
+        """Predict pod health and time-to-failure.
 
         Args:
-            pod_key: Pod identifier (namespace/name)
-            memory_pct: Current memory percentage
-            memory_trend_mib_per_min: Memory trend in MiB/min
+            pod_key: Unique pod identifier (e.g., "namespace/pod-name")
+            memory_pct: Current memory usage percentage
+            memory_trend_mib_per_min: Memory growth rate in MiB/min
             memory_limit_mib: Memory limit in MiB
             memory_mib: Current memory usage in MiB
-            cpu_pct: Current CPU percentage
+            cpu_pct: Current CPU usage percentage
             restart_rate_per_hr: Pod restarts per hour
-            log_error_rate_per_min: Log error rate per minute
+            log_error_rate_per_min: Log error count per minute
             node_memory_pressure: Whether node is under memory pressure
             node_disk_pressure: Whether node is under disk pressure
-            markov_state: Current Markov state
+            markov_state: Current Markov chain state
             markov_p_critical: Probability of transitioning to CRITICAL
             markov_p_failed: Probability of transitioning to FAILED
 
         Returns:
-            PredictionResult with risk score, TTF, and other metrics
+            PredictionResult with risk score, TTF, confidence, and trends.
         """
-        # Calculate time to failure
-        ttf_minutes = self._calculate_ttf(
-            memory_pct=memory_pct,
-            memory_trend_mib_per_min=memory_trend_mib_per_min,
-            memory_limit_mib=memory_limit_mib,
-            memory_mib=memory_mib
-        )
-
-        # Calculate confidence based on TTF predictability
-        confidence = self._calculate_confidence(ttf_minutes, memory_trend_mib_per_min)
-
-        # Build metrics dict for risk calculation
+        # Calculate Bayesian risk score
         pod_metrics = {
             "memory_pct": memory_pct,
             "memory_trend_mib_per_min": memory_trend_mib_per_min,
@@ -94,14 +83,31 @@ class Predictor:
             "memory_mib": memory_mib,
         }
 
-        # Calculate Bayesian risk score
         risk_score = calculate_risk(
             pod_metrics=pod_metrics,
             markov_state=markov_state,
             markov_p_critical=markov_p_critical,
-            markov_p_failed=markov_p_failed
+            markov_p_failed=markov_p_failed,
         )
 
+        # Calculate time-to-failure (minutes until memory threshold)
+        ttf_minutes = None
+        if memory_limit_mib > 0 and memory_trend_mib_per_min > 0:
+            remaining = memory_limit_mib - memory_mib
+            if remaining > 0:
+                ttf_minutes = int(remaining / memory_trend_mib_per_min)
+            else:
+                ttf_minutes = 0
+
+        # Calculate confidence based on trend stability and Markov state
+        confidence = self._calculate_confidence(
+            memory_trend_mib_per_min,
+            markov_state,
+            markov_p_critical,
+            markov_p_failed,
+        )
+
+        # Create result
         result = PredictionResult(
             pod_key=pod_key,
             risk_score=risk_score,
@@ -109,80 +115,70 @@ class Predictor:
             confidence=confidence,
             markov_state=markov_state,
             memory_trend=memory_trend_mib_per_min,
-            cpu_trend=cpu_pct / 10.0 if cpu_pct > 0 else 0.0,  # Simplified trend estimate
+            cpu_trend=0.0,  # CPU trend not provided in input
             memory_pct=memory_pct,
             cpu_pct=cpu_pct,
         )
 
         # Store prediction
-        self.predictions[pod_key] = result
+        self._predictions[pod_key] = result
 
         return result
 
-    def _calculate_ttf(self, memory_pct, memory_trend_mib_per_min, memory_limit_mib, memory_mib):
-        """Calculate time to failure based on memory trend.
+    def _calculate_confidence(
+        self,
+        memory_trend: float,
+        markov_state: str,
+        markov_p_critical: float,
+        markov_p_failed: float,
+    ) -> float:
+        """Calculate prediction confidence score.
 
-        Returns minutes to failure, or None if not approaching failure.
-        """
-        if memory_limit_mib <= 0:
-            return None
-
-        remaining = memory_limit_mib - memory_mib
-
-        if remaining <= 0:
-            return 0.0
-
-        if memory_trend_mib_per_min <= 0:
-            return None
-
-        ttf = remaining / memory_trend_mib_per_min
-
-        # Cap at reasonable maximum
-        if ttf > 180:
-            return None
-
-        return ttf
-
-    def _calculate_confidence(self, ttf_minutes, memory_trend):
-        """Calculate prediction confidence.
-
-        Higher confidence for:
-        - Clear trend (high absolute velocity)
-        - Predictable TTF (not too far in future)
-        """
-        if ttf_minutes is None:
-            return 0.0
-
-        if memory_trend == 0:
-            return 0.0
-
-        # Base confidence on TTF predictability
-        if ttf_minutes <= 5:
-            base_confidence = 0.9
-        elif ttf_minutes <= 10:
-            base_confidence = 0.85
-        elif ttf_minutes <= 30:
-            base_confidence = 0.75
-        else:
-            base_confidence = 0.5
-
-        # Adjust based on trend magnitude
-        trend_factor = min(abs(memory_trend) / 10.0, 1.0)
-        confidence = base_confidence * (0.5 + 0.5 * trend_factor)
-
-        return min(confidence, 1.0)
-
-    def add_prediction(self, pod_key, result):
-        """Add a prediction result manually."""
-        self.predictions[pod_key] = result
-
-    def get_at_risk(self):
-        """Get all pods above risk threshold.
+        Higher confidence when:
+        - Trends are stable (low variance)
+        - Markov state is stable (low transition probabilities to critical/failed)
 
         Returns:
-            list of PredictionResult for pods at risk
+            float: Confidence score 0.0 to 1.0
+        """
+        # Base confidence from Markov state
+        state_confidence = {
+            "HEALTHY": 0.9,
+            "DEGRADED": 0.7,
+            "STRESSED": 0.5,
+            "CRITICAL": 0.3,
+            "FAILED": 0.1,
+        }
+        confidence = state_confidence.get(markov_state, 0.5)
+
+        # Reduce confidence based on transition probabilities
+        confidence *= (1.0 - min(markov_p_critical + markov_p_failed, 1.0))
+
+        # Reduce confidence for high volatility trends
+        if abs(memory_trend) > 10:
+            confidence *= 0.7
+        elif abs(memory_trend) > 5:
+            confidence *= 0.85
+
+        return min(max(confidence, 0.0), 1.0)
+
+    def add_prediction(self, pod_key: str, result: PredictionResult) -> None:
+        """Add a prediction result directly.
+
+        Args:
+            pod_key: Pod identifier
+            result: PredictionResult to store
+        """
+        self._predictions[pod_key] = result
+
+    def get_at_risk(self) -> list[PredictionResult]:
+        """Get predictions with risk score above threshold.
+
+        Returns:
+            List of PredictionResult with risk_score >= risk_threshold
         """
         return [
-            result for result in self.predictions.values()
-            if result.risk_score > self.risk_threshold
+            result
+            for result in self._predictions.values()
+            if result.risk_score >= self.risk_threshold
         ]
