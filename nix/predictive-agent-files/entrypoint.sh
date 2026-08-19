@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Create required directories
-mkdir -p /var/lib/opendesk
+# openDesk Predictive Agent v4.0 — Predictive Kubernetes Health Monitor
+# Entrypoint: prepares runtime dirs then execs the Python reconcile loop.
 
-# Export environment variables
-export OPERATOR_VERSION=${OPERATOR_VERSION:-4.0.0}
+echo "[INFO] === openDesk Predictive Agent v${OPERATOR_VERSION:-4.0.0} starting ==="
+echo "[INFO] LLM Backend: ${LLM_BACKEND:-not set}"
+echo "[INFO] Ollama URL: ${OLLAMA_URL:-not set}"
+echo "[INFO] Ollama Model: ${OLLAMA_MODEL:-not set}"
+echo "[INFO] Watch namespaces: ${OPERATOR_WATCH_NAMESPACES:-opendesk,opendesk-edu,default,llm}"
+echo "[INFO] Reconcile interval: ${RECONCILE_INTERVAL:-60}s"
+echo "[INFO] Health probe: ${OPERATOR_HEALTH_PROBE_BIND_ADDRESS:-0.0.0.0:8081}"
+echo "[INFO] Metrics bind: ${OPERATOR_METRICS_BIND_ADDRESS:-0.0.0.0:8080}"
 
-# Set PYTHONPATH to ensure the predictive_agent package is discoverable
-export PYTHONPATH=/predictive_agent:${PYTHONPATH}
+# Create runtime directories (state PVC, logs, cache, kube config)
+mkdir -p /var/lib/opendesk /var/log/opendesk /var/cache/opendesk /run/opendesk /tmp /home/opendesk/.kube
 
-# Log startup information
-echo "Starting openDesk Predictive Agent v${OPERATOR_VERSION}"
-echo "PYTHONPATH: ${PYTHONPATH}"
-echo "LLM_BACKEND: ${LLM_BACKEND:-not set}"
-echo "OLLAMA_URL: ${OLLAMA_URL:-not set}"
-echo "OLLAMA_MODEL: ${OLLAMA_MODEL:-not set}"
+# Set PYTHONPATH so the predictive_agent package is importable
+export PYTHONPATH=/opt/predictive-agent:${PYTHONPATH:-}
 
-# Execute the main module
-exec python3 -m predictive_agent
+# Execute the Python operator (python3 is in PATH from the nix image Env).
+exec python3 -m predictive_agent.main "$@"

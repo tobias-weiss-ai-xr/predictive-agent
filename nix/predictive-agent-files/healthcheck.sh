@@ -1,30 +1,35 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Define the host and port
-HOST=${HOST:-localhost}
-PORT=${PORT:-8081}
+# openDesk Predictive Agent v4.0 — container healthcheck
+# Probes the HTTP health server (default port 8081).
+#   liveness  -> GET /healthz
+#   readiness -> GET /ready
+#
+# The health port is derived from OPERATOR_HEALTH_PROBE_BIND_ADDRESS (host:port).
 
-# Function to check a specific endpoint
-check_endpoint() {
-  local endpoint="$1"
-  local url="http://${HOST}:${PORT}${endpoint}"
-  
-  # Use curl to check the endpoint
-  if curl -sSf -o /dev/null -w "%{http_code}" "$url" | grep -q "200"; then
-    echo "${endpoint} is healthy"
-    return 0
-  else
-    echo "${endpoint} is NOT healthy"
-    return 1
-  fi
-}
+HEALTH_ADDR="${OPERATOR_HEALTH_PROBE_BIND_ADDRESS:-0.0.0.0:8081}"
+HEALTH_PORT="${HEALTH_ADDR##*:}"
 
-# Check both required endpoints
-if check_endpoint "/healthz" && check_endpoint "/ready"; then
-  echo "All health checks passed"
-  exit 0
-else
-  echo "Health checks failed"
-  exit 1
-fi
+case "${1:-liveness}" in
+  liveness)
+    if curl -sf "http://localhost:${HEALTH_PORT}/healthz" >/dev/null 2>&1; then
+      echo "OK: liveness"
+      exit 0
+    fi
+    echo "FAIL: liveness"
+    exit 1
+    ;;
+  readiness)
+    if curl -sf "http://localhost:${HEALTH_PORT}/ready" >/dev/null 2>&1; then
+      echo "OK: readiness"
+      exit 0
+    fi
+    echo "FAIL: readiness"
+    exit 1
+    ;;
+  *)
+    echo "Usage: $0 {liveness|readiness}"
+    exit 1
+    ;;
+esac
