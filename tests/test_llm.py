@@ -1,6 +1,8 @@
 """Test multi-backend LLM analysis."""
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, MagicMock as MockResponse
+import json
+import urllib.request
 from dev_agent.llm import LLMAnalyzer, LLMBackend
 
 
@@ -124,3 +126,111 @@ def test_llm_parse_response_invalid():
     parsed = analyzer.parse_response("not json at all")
     assert parsed is not None
     assert "analysis" in parsed  # Should have fallback
+
+
+# ─── Enhanced tests: actual API calls (mocked) ─────────────────────────────
+
+
+def test_llm_analyze_ollama_mock():
+    """Test analyze() makes HTTP request to Ollama API."""
+    analyzer = LLMAnalyzer(
+        backend=LLMBackend.OLLAMA,
+        url="http://localhost:11434",
+        model="test-model",
+    )
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_response.read.return_value = json.dumps({
+        "response": '{"analysis": "OOM risk", "severity": "high", "action": "Restart", "command": "kubectl delete pod"}'
+    }).encode()
+    mock_response.__enter__ = MagicMock(return_value=mock_response)
+    mock_response.__exit__ = MagicMock(return_value=None)
+
+    with patch("urllib.request.urlopen", return_value=mock_response):
+        result = analyzer.analyze("Pod crash", "ns=test")
+        assert result is not None
+        assert "analysis" in result
+
+
+def test_llm_analyze_saia_mock():
+    """Test analyze() makes HTTP request to SAIA API (OpenAI-compatible)."""
+    analyzer = LLMAnalyzer(
+        backend=LLMBackend.SAIA,
+        url="https://chat-ai.academiccloud.de/v1",
+        model="test-model",
+        api_key="test-key",
+    )
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_response.read.return_value = json.dumps({
+        "choices": [{"message": {"content": '{"analysis": "Memory leak", "severity": "medium", "action": "Monitor", "command": ""}'}}]
+    }).encode()
+    mock_response.__enter__ = MagicMock(return_value=mock_response)
+    mock_response.__exit__ = MagicMock(return_value=None)
+
+    with patch("urllib.request.urlopen", return_value=mock_response):
+        result = analyzer.analyze("High memory", "ns=test")
+        assert result is not None
+        assert "analysis" in result
+
+
+def test_llm_analyze_tud_mock():
+    """Test analyze() makes HTTP request to TUD API."""
+    analyzer = LLMAnalyzer(
+        backend=LLMBackend.TUD,
+        url="https://llm-service.ai.tu-darmstadt.de/v1",
+        model="test-model",
+        api_key="test-key",
+    )
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_response.read.return_value = json.dumps({
+        "choices": [{"message": {"content": '{"analysis": "CPU throttle", "severity": "low", "action": "Scale", "command": ""}'}}]
+    }).encode()
+    mock_response.__enter__ = MagicMock(return_value=mock_response)
+    mock_response.__exit__ = MagicMock(return_value=None)
+
+    with patch("urllib.request.urlopen", return_value=mock_response):
+        result = analyzer.analyze("CPU high", "ns=test")
+        assert result is not None
+        assert "analysis" in result
+
+
+def test_llm_analyze_error_handling():
+    """Test analyze() handles API errors gracefully."""
+    analyzer = LLMAnalyzer(
+        backend=LLMBackend.OLLAMA,
+        url="http://localhost:11434",
+        model="test-model",
+    )
+    with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("connection refused")):
+        result = analyzer.analyze("Pod crash", "ns=test")
+        assert result is not None
+        assert "analysis" in result  # Should return fallback
+
+
+def test_llm_analyze_timeout():
+    """Test analyze() handles timeouts gracefully."""
+    analyzer = LLMAnalyzer(
+        backend=LLMBackend.OLLAMA,
+        url="http://localhost:11434",
+        model="test-model",
+        timeout=5,
+    )
+    import socket
+    with patch("urllib.request.urlopen", side_effect=socket.timeout("timed out")):
+        result = analyzer.analyze("Pod crash", "ns=test")
+        assert result is not None
+        assert "analysis" in result
+
+
+def test_llm_build_prompt_no_prediction():
+    """Test prompt building without prediction data."""
+    analyzer = LLMAnalyzer(
+        backend=LLMBackend.OLLAMA,
+        url="http://localhost:11434",
+        model="test",
+    )
+    prompt = analyzer.build_prompt(issue="Test issue", context="test context")
+    assert "Test issue" in prompt
+    assert "test context" in prompt
