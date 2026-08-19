@@ -27,6 +27,14 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
 from predictive_agent import config
+from predictive_agent.actions import (
+    DeploymentScaleAction,
+    NodeCordonAction,
+    PodRestartAction,
+    ResourceTunerAction,
+    RightSizeAction,
+    RolloutRestartAction,
+)
 from predictive_agent.collector import (
     collect_top_metrics,
     collect_top_nodes,
@@ -35,8 +43,10 @@ from predictive_agent.collector import (
     get_pod_resources,
     run_cmd,
 )
+from predictive_agent.notifier import NotificationManager, create_notifier_from_config
 from predictive_agent.persistence import StateStore
 from predictive_agent.predictor import Predictor
+from predictive_agent.remediator import RemediationManager, create_remediation_manager_from_config
 from predictive_agent.state_model import StateModel
 
 logger = logging.getLogger("predictive-agent")
@@ -50,6 +60,8 @@ _history: list = []
 _reconcile_count = 0
 _last_reconcile_time: Optional[str] = None
 _server = None  # HTTP server handle
+_remediation_manager: Optional[RemediationManager] = None
+_notifier: Optional[NotificationManager] = None
 
 
 def _now_iso() -> str:
@@ -262,6 +274,34 @@ def reconcile() -> Dict[str, Any]:
                     pod_key, result.risk_score, result.ttf_minutes, markov_state,
                 )
 
+                # ─── Remediation (REM-8) ────────────────────────────────
+                if _remediation_manager is not None:
+                    # Enrich pod_state with prediction data for actions
+                    tracker.cpu_trend = result.cpu_trend
+                    tracker.memory_trend = result.memory_trend
+                    try:
+                        results = _remediation_manager.evaluate(
+                            tracker, result, result.risk_score
+                        )
+                        for rem_result in results:
+                            logger.info(
+                                "Remediation: %s on %s — %s",
+                                rem_result.action,
+                                rem_result.target,
+                                rem_result.message,
+                            )
+                            # Send notification for each remediation action
+                            if _notifier is not None and rem_result.success:
+                                _notifier.notify(
+                                    alert_type="remediation",
+                                    pod_name=pod_key,
+                                    risk_score=result.risk_score,
+                                    action_taken=rem_result.action,
+                                    details=rem_result.message,
+                                )
+                    except Exception as e:
+                        logger.error("Remediation evaluation failed for %s: %s", pod_key, e)
+
     # Update Markov chain
     if _state_model.markov:
         for pod_key, tracker in _state_model.pods.items():
@@ -307,6 +347,10 @@ def reconcile() -> Dict[str, Any]:
         "at_risk_count": at_risk_count,
         "reconcile_count": cycle,
     }
+
+    # ─── Add remediation stats to result ──────────────────────────────
+    if _remediation_manager is not None:
+        result["remediation"] = _remediation_manager.get_stats()
 
     if at_risk_count > 0:
         logger.warning("Reconcile #%d: %d pods at risk", cycle, at_risk_count)
@@ -381,12 +425,15 @@ def _start_http_server() -> Any:
         cache=_cache,
         reconcile_callback=reconcile,
         history=_history,
+        remediation_manager=_remediation_manager,
+        notifier=_notifier,
     )
 
 
 def main() -> None:
     """Main entry point — initialize state, start server, run reconcile loop."""
     global _state_model, _predictor, _state_store, _server
+    global _remediation_manager, _notifier
 
     _setup_logging()
     logger.info("=== %s v%s starting ===", config.OPERATOR_NAME, config.OPERATOR_VERSION)
@@ -408,6 +455,25 @@ def main() -> None:
         logger.info("Loaded Markov chain state from %s", config.STATE_MODEL_FILE)
     except Exception as e:
         logger.warning("Could not load Markov state: %s", e)
+
+    # ─── Initialize remediation (REM-8) ───────────────────────────────
+    _remediation_manager = create_remediation_manager_from_config()
+    _remediation_manager.register_action(PodRestartAction())
+    _remediation_manager.register_action(NodeCordonAction())
+    _remediation_manager.register_action(RightSizeAction())
+    _remediation_manager.register_action(RolloutRestartAction())
+    _remediation_manager.register_action(DeploymentScaleAction())
+    _remediation_manager.register_action(ResourceTunerAction())
+    logger.info(
+        "Remediation initialized: dry_run=%s, threshold=%.1f, actions=%s",
+        _remediation_manager.dry_run,
+        _remediation_manager.risk_threshold,
+        _remediation_manager.get_stats()["registered_actions"],
+    )
+
+    # ─── Initialize notifications (REM-6) ──────────────────────────────
+    _notifier = create_notifier_from_config()
+    logger.info("Notification manager initialized")
 
     # Start HTTP server
     try:

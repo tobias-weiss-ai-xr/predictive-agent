@@ -33,6 +33,8 @@ class _ServerState:
         "reconcile_callback",
         "history",
         "start_time",
+        "remediation_manager",
+        "notifier",
     )
 
     def __init__(self):
@@ -42,6 +44,8 @@ class _ServerState:
         self.reconcile_callback = None
         self.history = []
         self.start_time = time.time()
+        self.remediation_manager = None
+        self.notifier = None
 
 
 # Default context used when start_server is called without arguments (e.g. the
@@ -117,6 +121,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_response(data, status=status)
         elif path == "/cache":
             self._send_response(self._cache_dict())
+        elif path == "/remediate":
+            self._send_response(self._remediate_get())
+        elif path == "/notifications":
+            self._send_response(self._notifications_get())
         else:
             self._send_response({"error": "Not Found"}, status=404)
 
@@ -124,6 +132,9 @@ class RequestHandler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/reanalyze":
             data, status = self._reanalyze()
+            self._send_response(data, status=status)
+        elif path == "/remediate":
+            data, status = self._remediate_post()
             self._send_response(data, status=status)
         else:
             self._send_response({"error": "Not Found"}, status=404)
@@ -173,6 +184,24 @@ class RequestHandler(BaseHTTPRequestHandler):
             "# TYPE opendesk_dev_agent_risk_score gauge",
             f"opendesk_dev_agent_risk_score {risk_score}",
         ])
+        # ─── Remediation metrics (REM-8) ──────────────────────────────────
+        rem = _context.remediation_manager
+        if rem is not None:
+            stats = rem.get_stats()
+            lines.extend([
+                "# HELP opendesk_predictive_agent_remediation_actions_total Total remediation actions",
+                "# TYPE opendesk_predictive_agent_remediation_actions_total counter",
+                f"opendesk_predictive_agent_remediation_actions_total {stats['total_actions']}",
+                "# HELP opendesk_predictive_agent_remediation_successful_total Successful remediation actions",
+                "# TYPE opendesk_predictive_agent_remediation_successful_total counter",
+                f"opendesk_predictive_agent_remediation_successful_total {stats['successful_actions']}",
+                "# HELP opendesk_predictive_agent_remediation_failed_total Failed remediation actions",
+                "# TYPE opendesk_predictive_agent_remediation_failed_total counter",
+                f"opendesk_predictive_agent_remediation_failed_total {stats['failed_actions']}",
+                "# HELP opendesk_predictive_agent_remediation_dry_run_total Dry-run remediation actions",
+                "# TYPE opendesk_predictive_agent_remediation_dry_run_total counter",
+                f"opendesk_predictive_agent_remediation_dry_run_total {stats['dry_run_actions']}",
+            ])
         return "\n".join(lines) + "\n"
 
     def _status_dict(self):
@@ -241,6 +270,82 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return {"status": "error", "error": str(exc)}, 503
         return {"status": "ok", "reanalyze": "triggered"}, 200
 
+    def _remediate_get(self):
+        """GET /remediate — return remediation config, stats, and audit trail."""
+        rem = _context.remediation_manager
+        if rem is None:
+            return {"status": "disabled", "message": "Remediation not initialized"}
+        stats = rem.get_stats()
+        audit_trail = rem.get_audit_trail(limit=50)
+        return {
+            "status": "enabled" if not rem.dry_run else "dry_run",
+            "dry_run": rem.dry_run,
+            "risk_threshold": rem.risk_threshold,
+            "registered_actions": stats["registered_actions"],
+            "stats": stats,
+            "audit_trail": audit_trail,
+            "safety_policy": {
+                "max_per_minute": rem.safety_policy.max_per_minute,
+                "max_per_hour": rem.safety_policy.max_per_hour,
+                "cooldown_seconds": rem.safety_policy.cooldown_seconds,
+                "protected_namespaces": list(rem.safety_policy.protected_namespaces),
+            },
+        }
+
+    def _remediate_post(self):
+        """POST /remediate — manually trigger remediation for a specific pod.
+
+        Expects JSON body: {"pod_name": "namespace/pod", "risk_score": 85.0}
+        """
+        rem = _context.remediation_manager
+        if rem is None:
+            return {"status": "error", "error": "Remediation not initialized"}, 503
+
+        content_length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(content_length) if content_length > 0 else b""
+        try:
+            payload = json.loads(body) if body else {}
+        except json.JSONDecodeError:
+            return {"status": "error", "error": "Invalid JSON body"}, 400
+
+        pod_name = payload.get("pod_name", "")
+        risk_score = float(payload.get("risk_score", 0.0))
+        if not pod_name:
+            return {"status": "error", "error": "pod_name is required"}, 400
+
+        # Look up pod state from the state model
+        sm = _context.state_model
+        if sm is None or pod_name not in sm.pods:
+            return {"status": "error", "error": f"Pod '{pod_name}' not found in state model"}, 404
+
+        tracker = sm.pods[pod_name]
+        results = rem.evaluate(tracker, None, risk_score)
+        return {
+            "status": "ok",
+            "pod_name": pod_name,
+            "risk_score": risk_score,
+            "results": [
+                {
+                    "action": r.action,
+                    "target": r.target,
+                    "success": r.success,
+                    "dry_run": r.dry_run,
+                    "message": r.message,
+                    "timestamp": r.timestamp,
+                    "command": r.command,
+                }
+                for r in results
+            ],
+        }, 200
+
+    def _notifications_get(self):
+        """GET /notifications — return recent notification history."""
+        notifier = _context.notifier
+        if notifier is None:
+            return {"notifications": [], "total": 0, "message": "Notifier not initialized"}
+        history = notifier.get_history(limit=50)
+        return {"notifications": history, "total": len(history)}
+
     def log_message(self, format, *args):
         # Suppress standard logging to keep test output clean
         return
@@ -257,7 +362,8 @@ class HTTPServer(BaseHTTPServer):
 
 
 def start_server(metrics_port, health_port, state_model=None, predictor=None,
-                 cache=None, reconcile_callback=None, history=None):
+                 cache=None, reconcile_callback=None, history=None,
+                 remediation_manager=None, notifier=None):
     """Start the metrics/API and health HTTP servers.
 
     Args:
@@ -268,6 +374,8 @@ def start_server(metrics_port, health_port, state_model=None, predictor=None,
         cache: Optional LLM analysis cache (dict) for the ``/cache`` endpoint.
         reconcile_callback: Optional callable triggered by ``/reanalyze``.
         history: Optional list of analysis-history entries for ``/history``.
+        remediation_manager: Optional :class:`RemediationManager` for /remediate.
+        notifier: Optional :class:`NotificationManager` for /notifications.
 
     Returns:
         The metrics HTTPServer instance. Calling ``shutdown()`` on it stops
@@ -279,6 +387,8 @@ def start_server(metrics_port, health_port, state_model=None, predictor=None,
     _context.cache = cache
     _context.reconcile_callback = reconcile_callback
     _context.history = history if history is not None else []
+    _context.remediation_manager = remediation_manager
+    _context.notifier = notifier
     _context.start_time = time.time()
 
     # Metrics and API server (use HTTPServer subclass with allow_reuse_address)

@@ -73,3 +73,25 @@ SKIP_LOGS_STATUSES = {
 
 # ─── Markov States ───────────────────────────────────────────────────────────
 MARKOV_STATES = ["HEALTHY", "DEGRADED", "STRESSED", "CRITICAL", "FAILED", "RECOVERED"]
+
+# ─── Remediation ────────────────────────────────────────────────────────────
+REMEDIATION_ENABLED = os.environ.get("REMEDIATION_ENABLED", "false")
+REMEDIATION_DRY_RUN = os.environ.get("REMEDIATION_DRY_RUN", "true")
+REMEDIATION_MAX_PER_MIN = os.environ.get("REMEDIATION_MAX_PER_MIN", "5")
+REMEDIATION_MAX_PER_HOUR = os.environ.get("REMEDIATION_MAX_PER_HOUR", "50")
+REMEDIATION_COOLDOWN_S = os.environ.get("REMEDIATION_COOLDOWN_S", "300")
+REMEDIATION_RISK_THRESHOLD = os.environ.get("REMEDIATION_RISK_THRESHOLD", "70.0")
+REMEDIATION_PROTECTED_NS = os.environ.get(
+    "REMEDIATION_PROTECTED_NS", "kube-system,opendesk-predictive-agent"
+)
+
+# ─── Alerting / Notification ────────────────────────────────────────────────
+ALERT_EMAIL_TO = os.environ.get("ALERT_EMAIL_TO", "tobias.weiss@uni-marburg.de")
+ALERT_EMAIL_FROM = os.environ.get("ALERT_EMAIL_FROM", "predictive-agent@opendesk.scs")
+SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.uni-marburg.de")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("SMTP_USER", "")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+SMTP_USE_TLS = os.environ.get("SMTP_USE_TLS", "true").lower() in ("true", "1", "yes")
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")
+WEBHOOK_TIMEOUT = int(os.environ.get("WEBHOOK_TIMEOUT", "10"))
