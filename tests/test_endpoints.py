@@ -4,7 +4,7 @@ import json
 import time
 import urllib.request
 import urllib.error
-from dev_agent.server import start_server
+from predictive_agent.server import start_server
 
 
 @pytest.fixture(scope="module")
@@ -52,4 +52,4 @@ def test_health_endpoints(test_server):
     # Test /metrics
     with urllib.request.urlopen("http://localhost:18080/metrics") as resp:
         text = resp.read().decode()
-        assert "opendesk_dev_agent" in text
+        assert "opendesk_predictive_agent" in text

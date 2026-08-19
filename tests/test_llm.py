@@ -3,7 +3,7 @@ import pytest
 from unittest.mock import patch, MagicMock, MagicMock as MockResponse
 import json
 import urllib.request
-from dev_agent.llm import LLMAnalyzer, LLMBackend
+from predictive_agent.llm import LLMAnalyzer, LLMBackend
 
 
 def test_llm_backend_enum():

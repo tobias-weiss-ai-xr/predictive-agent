@@ -1,6 +1,6 @@
 """Test Bayesian risk scoring."""
 import pytest
-from dev_agent.risk import calculate_risk
+from predictive_agent.risk import calculate_risk
 
 
 def test_risk_calculation_low_risk():

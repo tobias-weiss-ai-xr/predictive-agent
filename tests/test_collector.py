@@ -1,6 +1,6 @@
 """Test metrics collection from kubectl."""
 import pytest
-from dev_agent.collector import parse_cpu, parse_memory, collect_top_metrics, collect_top_nodes, count_log_errors
+from predictive_agent.collector import parse_cpu, parse_memory, collect_top_metrics, collect_top_nodes, count_log_errors
 
 
 def test_parse_cpu():

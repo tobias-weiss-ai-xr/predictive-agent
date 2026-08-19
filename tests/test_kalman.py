@@ -1,6 +1,6 @@
 """Test KalmanTrend class for trend estimation."""
 import pytest
-from dev_agent.kalman import KalmanTrend
+from predictive_agent.kalman import KalmanTrend
 
 
 def test_kalman_trend_initialization():

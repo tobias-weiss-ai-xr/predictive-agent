@@ -3,8 +3,8 @@
 import json
 import os
 
-from dev_agent.config import PREDICTIONS_FILE
-from dev_agent.markov import MarkovChain
+from predictive_agent.config import PREDICTIONS_FILE
+from predictive_agent.markov import MarkovChain
 
 
 class StateStore:

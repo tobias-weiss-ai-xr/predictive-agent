@@ -1,7 +1,7 @@
 import json
 import threading
 from http.server import HTTPServer as BaseHTTPServer, BaseHTTPRequestHandler
-from dev_agent import config
+from predictive_agent import config
 
 class RequestHandler(BaseHTTPRequestHandler):
     def _send_response(self, data, status=200, content_type="application/json"):
@@ -20,12 +20,12 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_response({"status": "ready"})
         elif self.path == "/metrics":
             # Prometheus format
-            metrics = "opendesk_dev_agent_uptime_seconds 0\n"
+            metrics = "opendesk_predictive_agent_uptime_seconds 0\n"
             self._send_response(metrics, content_type="text/plain")
         elif self.path == "/status":
             self._send_response({
                 "version": "4.0",
-                "operator": "dev-agent-monitor",
+                "operator": "predictive-agent-monitor",
                 "status": "running"
             })
         elif self.path == "/predictions":

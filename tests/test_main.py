@@ -1,7 +1,7 @@
 """Test main reconcile loop."""
 import pytest
 from unittest.mock import patch, MagicMock
-from dev_agent.main import reconcile, ReconcileLoop
+from predictive_agent.main import reconcile, ReconcileLoop
 
 
 def test_reconcile_exists():
@@ -11,11 +11,11 @@ def test_reconcile_exists():
 
 def test_reconcile_returns_predictions():
     """reconcile should return a list of predictions."""
-    with patch("dev_agent.main.collect_top_metrics", return_value={}), \
-         patch("dev_agent.main.collect_top_nodes", return_value={}), \
-         patch("dev_agent.main.get_pod_resources", return_value={}), \
-         patch("dev_agent.main.get_node_conditions", return_value={}), \
-         patch("dev_agent.main.count_log_errors", return_value=0):
+    with patch("predictive_agent.main.collect_top_metrics", return_value={}), \
+         patch("predictive_agent.main.collect_top_nodes", return_value={}), \
+         patch("predictive_agent.main.get_pod_resources", return_value={}), \
+         patch("predictive_agent.main.get_node_conditions", return_value={}), \
+         patch("predictive_agent.main.count_log_errors", return_value=0):
         result = reconcile()
         assert isinstance(result, dict)
         assert "predictions" in result
@@ -37,11 +37,11 @@ def test_reconcile_with_metrics():
     mock_conditions = {
         "node-1": {"Ready": "True", "MemoryPressure": "False", "DiskPressure": "False"}
     }
-    with patch("dev_agent.main.collect_top_metrics", return_value=mock_metrics), \
-         patch("dev_agent.main.collect_top_nodes", return_value=mock_nodes), \
-         patch("dev_agent.main.get_pod_resources", return_value=mock_resources), \
-         patch("dev_agent.main.get_node_conditions", return_value=mock_conditions), \
-         patch("dev_agent.main.count_log_errors", return_value=0):
+    with patch("predictive_agent.main.collect_top_metrics", return_value=mock_metrics), \
+         patch("predictive_agent.main.collect_top_nodes", return_value=mock_nodes), \
+         patch("predictive_agent.main.get_pod_resources", return_value=mock_resources), \
+         patch("predictive_agent.main.get_node_conditions", return_value=mock_conditions), \
+         patch("predictive_agent.main.count_log_errors", return_value=0):
         result = reconcile()
         assert "predictions" in result
         assert isinstance(result["predictions"], list)

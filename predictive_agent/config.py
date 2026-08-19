@@ -1,15 +1,15 @@
-"""Configuration for dev-agent v4.0."""
+"""Configuration for predictive-agent v4.0."""
 
 import os
 
 # ─── Core ────────────────────────────────────────────────────────────────────
-OPERATOR_NAME = os.environ.get("OPERATOR_NAME", "opendesk-dev-agent")
-OPERATOR_NAMESPACE = os.environ.get("OPERATOR_NAMESPACE", "opendesk-dev-agent")
+OPERATOR_NAME = os.environ.get("OPERATOR_NAME", "opendesk-predictive-agent")
+OPERATOR_NAMESPACE = os.environ.get("OPERATOR_NAMESPACE", "opendesk-predictive-agent")
 OPERATOR_VERSION = "4.0.0"
 WATCH_NAMESPACES = os.environ.get(
     "OPERATOR_WATCH_NAMESPACES", "opendesk,opendesk-edu,default,llm"
 ).split(",")
-SKIP_NAMESPACES = {"opendesk-dev-agent"}
+SKIP_NAMESPACES = {"opendesk-predictive-agent"}
 
 # ─── LLM Backend ─────────────────────────────────────────────────────────────
 LLM_BACKEND = os.environ.get("LLM_BACKEND", "ollama")  # ollama, saia, openai

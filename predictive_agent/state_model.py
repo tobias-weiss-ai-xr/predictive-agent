@@ -1,7 +1,7 @@
 """Pod state tracking with Kalman filters and state classification."""
 
-from dev_agent.kalman import KalmanTrend
-from dev_agent.markov import MarkovChain
+from predictive_agent.kalman import KalmanTrend
+from predictive_agent.markov import MarkovChain
 
 
 def classify_state(memory_pct, cpu_pct, restart_rate, log_errors, node_pressure, markov_state):
@@ -246,7 +246,7 @@ class StateModel:
                 model.pods[key] = tracker
 
         if "markov" in data and data["markov"]:
-            from dev_agent.markov import MarkovChain
+            from predictive_agent.markov import MarkovChain
             model.markov = MarkovChain.from_dict(data["markov"])
 
         return model

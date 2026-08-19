@@ -1,6 +1,6 @@
 """Test MarkovChain class for state transitions."""
 import pytest
-from dev_agent.markov import MarkovChain
+from predictive_agent.markov import MarkovChain
 
 
 def test_markov_chain_initialization():

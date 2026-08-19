@@ -1,6 +1,6 @@
 """Test prediction engine."""
 import pytest
-from dev_agent.predictor import Predictor, PredictionResult
+from predictive_agent.predictor import Predictor, PredictionResult
 
 
 def test_prediction_result_creation():

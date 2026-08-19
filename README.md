@@ -1,10 +1,10 @@
-# openDesk Dev Agent v4.0
+# openDesk Predictive Agent v4.0
 
 **Predictive Kubernetes Health Monitor**
 
 ## Overview
 
-Dev-agent v4.0 shifts from reactive (detect crash → analyze) to predictive (detect trends → predict failure → warn before crash).
+Predictive-agent v4.0 shifts from reactive (detect crash → analyze) to predictive (detect trends → predict failure → warn before crash).
 
 ### Key Features
 
@@ -48,11 +48,11 @@ Dev-agent v4.0 shifts from reactive (detect crash → analyze) to predictive (de
 
 ```bash
 # Clone repository
-git clone https://github.com/tobias-weiss-ai-xr/dev-agent.git
-cd dev-agent
+git clone https://github.com/tobias-weiss-ai-xr/predictive-agent.git
+cd predictive-agent
 
 # Build image
-docker build -t dev-agent:v4.0 .
+docker build -t predictive-agent:v4.0 .
 
 # Deploy to Kubernetes
 kubectl apply -f k8s/deployment.yaml
@@ -66,8 +66,8 @@ kubectl apply -f k8s/rbac.yaml
 
 ```env
 # Core
-OPERATOR_NAME=opendesk-dev-agent
-OPERATOR_NAMESPACE=opendesk-dev-agent
+OPERATOR_NAME=opendesk-predictive-agent
+OPERATOR_NAMESPACE=opendesk-predictive-agent
 OPERATOR_VERSION=4.0.0
 WATCH_NAMESPACES=opendesk,opendesk-edu,default,llm
 
@@ -132,7 +132,7 @@ python -m pytest tests/
 python -m pytest tests/integration/
 
 # Run linter
-python -m pylint dev_agent.py
+python -m pylint predictive_agent
 ```
 
 ### TDD Workflow

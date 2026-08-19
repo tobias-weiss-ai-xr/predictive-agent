@@ -3,9 +3,9 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from dev_agent.kalman import KalmanTrend
-from dev_agent.markov import MarkovChain
-from dev_agent.risk import calculate_risk
+from predictive_agent.kalman import KalmanTrend
+from predictive_agent.markov import MarkovChain
+from predictive_agent.risk import calculate_risk
 
 
 @dataclass

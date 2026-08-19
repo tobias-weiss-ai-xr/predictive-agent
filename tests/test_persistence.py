@@ -3,7 +3,7 @@ import pytest
 import os
 import json
 import tempfile
-from dev_agent.persistence import StateStore
+from predictive_agent.persistence import StateStore
 
 
 def test_state_store_creation():
@@ -20,7 +20,7 @@ def test_state_store_save_load_markov():
         store = StateStore(sm_file, pred_file)
 
         # Save some state
-        from dev_agent.markov import MarkovChain
+        from predictive_agent.markov import MarkovChain
         mc = MarkovChain()
         mc.record_transition("HEALTHY", "DEGRADED")
         mc.record_transition("DEGRADED", "STRESSED")
@@ -68,7 +68,7 @@ def test_state_store_save_markov_no_dir():
         pred_file = os.path.join(tmpdir, "predictions.json")
         store = StateStore(sm_file, pred_file)
 
-        from dev_agent.markov import MarkovChain
+        from predictive_agent.markov import MarkovChain
         mc = MarkovChain()
         mc.record_transition("HEALTHY", "HEALTHY")
         store.save_markov(mc)  # Should create directory

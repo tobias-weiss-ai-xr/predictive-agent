@@ -1,7 +1,7 @@
 """Test PodTracker state model."""
 import pytest
 import time
-from dev_agent.state_model import PodTracker, StateModel, classify_state
+from predictive_agent.state_model import PodTracker, StateModel, classify_state
 
 
 def test_classify_state_healthy():
