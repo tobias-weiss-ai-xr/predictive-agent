@@ -4,6 +4,12 @@ import json
 import re
 import subprocess
 
+# Pre-compiled regex for error detection (much faster than 10 separate re.search calls)
+_ERROR_RE = re.compile(
+    r"\b(?:ERROR|Error|FATAL|PANIC|OOM|CrashLoopBackOff|Exception|Traceback)\b"
+    r"|\bpanic:|\bfatal:"
+)
+
 
 def run_cmd(cmd, timeout=30):
     """Run a command and return (returncode, stdout, stderr)."""
@@ -112,22 +118,8 @@ def get_node_conditions(node_json):
 
 def count_log_errors(log_text):
     """Count error-level log lines."""
-    error_patterns = [
-        r"\bERROR\b",
-        r"\bError\b",
-        r"\bFATAL\b",
-        r"\bPANIC\b",
-        r"\bOOM\b",
-        r"\bCrashLoopBackOff\b",
-        r"\bException\b",
-        r"\bTraceback\b",
-        r"\bpanic:",
-        r"\bfatal:",
-    ]
     count = 0
     for line in log_text.split("\n"):
-        for pattern in error_patterns:
-            if re.search(pattern, line):
-                count += 1
-                break
+        if _ERROR_RE.search(line):
+            count += 1
     return count
