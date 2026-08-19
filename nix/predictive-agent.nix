@@ -17,12 +17,14 @@ let
   healthcheckSh = pkgs.writeText "healthcheck.sh" (builtins.readFile ./predictive-agent-files/healthcheck.sh);
 
   # The v4.0 predictive_agent package (stdlib-only Python) lives at the repo root.
-  # Copy only the *.py modules into /opt/predictive-agent/predictive_agent so the
+  # Copy the *.py modules into /opt/predictive-agent/predictive_agent so the
   # package is importable via `python3 -m predictive_agent.main`
   # (PYTHONPATH=/opt/predictive-agent).
+  # Also copy the actions/ subdirectory for remediation action modules.
   predictiveAgentPackage = pkgs.runCommand "predictive-agent-package" {} ''
-    mkdir -p $out/opt/predictive-agent/predictive_agent
+    mkdir -p $out/opt/predictive-agent/predictive_agent/actions
     cp ${../predictive_agent}/*.py $out/opt/predictive-agent/predictive_agent/
+    cp ${../predictive_agent/actions}/*.py $out/opt/predictive-agent/predictive_agent/actions/
     cp ${entrypointSh} $out/opt/predictive-agent/entrypoint.sh
     chmod +x $out/opt/predictive-agent/entrypoint.sh
     cp ${healthcheckSh} $out/opt/predictive-agent/healthcheck.sh
@@ -46,7 +48,7 @@ let
 in
 pkgs.dockerTools.buildLayeredImage {
   name = "predictive-agent";
-  tag = "v8-nix";
+  tag = "v8.2-nix";
 
   contents = with pkgs; [
     python3
@@ -81,6 +83,19 @@ pkgs.dockerTools.buildLayeredImage {
       "RECONCILE_INTERVAL=60"
       "OPERATOR_METRICS_BIND_ADDRESS=0.0.0.0:8080"
       "OPERATOR_HEALTH_PROBE_BIND_ADDRESS=0.0.0.0:8081"
+      "REMEDIATION_ENABLED=true"
+      "REMEDIATION_DRY_RUN=true"
+      "REMEDIATION_MAX_PER_MIN=5"
+      "REMEDIATION_MAX_PER_HOUR=50"
+      "REMEDIATION_COOLDOWN_S=300"
+      "REMEDIATION_RISK_THRESHOLD=70.0"
+      "REMEDIATION_PROTECTED_NS=kube-system,opendesk-predictive-agent"
+      "ALERT_EMAIL_TO=tobias.weiss@uni-marburg.de"
+      "SMTP_HOST=smtp.uni-marburg.de"
+      "SMTP_PORT=587"
+      "SMTP_USE_TLS=true"
+      "WEBHOOK_URL="
+      "WEBHOOK_TIMEOUT=10"
       "PYTHONPATH=/opt/predictive-agent"
       "PATH=${pkgs.python3}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin:${pkgs.gnused}/bin:${pkgs.procps}/bin:${pkgs.kubectl}/bin"
       "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
