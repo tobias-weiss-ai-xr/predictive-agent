@@ -15,7 +15,7 @@ class LLMBackend(Enum):
 class LLMAnalyzer:
     """Multi-backend LLM analyzer for Kubernetes health analysis."""
 
-    def __init__(self, backend, url, model, api_key=None):
+    def __init__(self, backend, url, model, api_key=None, timeout=180):
         """Initialize LLM analyzer.
         
         Args:
@@ -23,11 +23,13 @@ class LLMAnalyzer:
             url: API endpoint URL
             model: Model name
             api_key: Optional API key (required for SAIA, TUD, OpenAI)
+            timeout: API request timeout in seconds
         """
         self.backend = backend
         self.url = url
         self.model = model
         self.api_key = api_key
+        self.timeout = timeout
 
     def build_prompt(self, issue, context, prediction=None):
         """Build LLM prompt with issue, context, and prediction data.
@@ -69,6 +71,68 @@ class LLMAnalyzer:
         prompt_parts.append("- command: kubectl command to execute (if applicable)")
         
         return "\n".join(prompt_parts)
+
+    def analyze(self, issue, context, prediction=None):
+        """Perform analysis using the configured LLM backend.
+        
+        Args:
+            issue: Issue description
+            context: Context information
+            prediction: Optional prediction data dict
+            
+        Returns:
+            Parsed analysis result dict
+        """
+        prompt = self.build_prompt(issue, context, prediction)
+        
+        try:
+            import urllib.request
+            import urllib.error
+            
+            if self.backend == LLMBackend.OLLAMA:
+                endpoint = f"{self.url.rstrip('/')}/api/chat"
+                payload = {
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "stream": False
+                }
+                headers = {"Content-Type": "application/json"}
+            else:
+                # OpenAI compatible (SAIA, TUD, OPENAI)
+                endpoint = f"{self.url.rstrip('/')}/chat/completions"
+                payload = {
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": prompt}]
+                }
+                headers = {"Content-Type": "application/json"}
+                if self.api_key:
+                    headers["Authorization"] = f"Bearer {self.api_key}"
+
+            data = json.dumps(payload).encode("utf-8")
+            request = urllib.request.Request(endpoint, data=data, headers=headers)
+            
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                body = response.read().decode("utf-8")
+                res_json = json.loads(body)
+                
+                if self.backend == LLMBackend.OLLAMA:
+                    # Ollama returns content in 'message' -> 'content' or similar depending on version, 
+                    # but tests expect 'response' field
+                    content = res_json.get("response", res_json.get("message", {}).get("content", ""))
+                else:
+                    # OpenAI compatible: choices[0].message.content
+                    choices = res_json.get("choices", [])
+                    content = choices[0].get("message", {}).get("content", "") if choices else ""
+                
+                return self.parse_response(content)
+
+        except Exception as e:
+            return {
+                "analysis": f"LLM API error: {str(e)}",
+                "severity": "medium",
+                "action": "Check LLM connectivity",
+                "command": ""
+            }
 
     def parse_response(self, response):
         """Parse LLM JSON response with fallback for invalid JSON.
