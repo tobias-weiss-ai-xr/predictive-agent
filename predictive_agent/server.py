@@ -179,13 +179,18 @@ class RequestHandler(BaseHTTPRequestHandler):
         sm = _context.state_model
         pred = _context.predictor
         pods_tracked = len(sm.pods) if sm is not None else 0
-        predictions_count = len(_all_predictions(pred))
+        predictions = _all_predictions(pred)
+        predictions_count = len(predictions)
+        at_risk = [p for p in predictions if p.risk_score >= (pred.risk_threshold if pred else 0.5)]
+        uptime = int(time.time() - _context.start_time)
         return {
             "version": config.OPERATOR_VERSION,
             "operator": config.OPERATOR_NAME,
             "status": "running",
             "pod_count": pods_tracked,
             "predictions_count": predictions_count,
+            "at_risk_count": len(at_risk),
+            "uptime_seconds": uptime,
         }
 
     def _predictions_dict(self):

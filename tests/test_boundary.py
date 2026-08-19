@@ -342,25 +342,23 @@ class TestClassifyStateBoundary:
     """Boundary tests for classify_state at exact score thresholds."""
 
     def test_score_exactly_3_degraded(self):
-        """Score of 3 should be DEGRADED."""
-        # memory_pct=50 (score 1) + cpu_pct=40 (score 1) + restart 0 + log 0 + node False + markov HEALTHY (0) = 2
-        # Need score of 3: memory 50 (1) + cpu 60 (2) = 3
-        state = classify_state(memory_pct=50, cpu_pct=60, restart_rate=0,
+        """Score of 3 should be DEGRADED.
+        memory_pct=51 (>50, score 1) + cpu_pct=61 (>60, score 2) = 3"""
+        state = classify_state(memory_pct=51, cpu_pct=61, restart_rate=0,
                                log_errors=0, node_pressure=False, markov_state="HEALTHY")
         assert state == "DEGRADED"
 
     def test_score_exactly_6_stressed(self):
-        """Score of 6 should be STRESSED."""
-        # memory 85 (3) + cpu 80 (3) = 6
-        state = classify_state(memory_pct=85, cpu_pct=80, restart_rate=0,
+        """Score of 6 should be STRESSED.
+        memory_pct=86 (>85, score 3) + cpu_pct=81 (>80, score 3) = 6"""
+        state = classify_state(memory_pct=86, cpu_pct=81, restart_rate=0,
                                log_errors=0, node_pressure=False, markov_state="HEALTHY")
         assert state == "STRESSED"
 
     def test_score_exactly_10_critical(self):
-        """Score of 10 should be CRITICAL."""
-        # memory 95 (4) + cpu 95 (4) + restart 0 + log 0 + node False + markov HEALTHY (0) = 8
-        # Need 10: memory 95 (4) + cpu 95 (4) + restart 1 (2) = 10
-        state = classify_state(memory_pct=95, cpu_pct=95, restart_rate=1,
+        """Score of 10 should be CRITICAL.
+        memory_pct=96 (>95, score 4) + cpu_pct=96 (>95, score 4) + restart_rate=2 (>1, score 2) = 10"""
+        state = classify_state(memory_pct=96, cpu_pct=96, restart_rate=2,
                                log_errors=0, node_pressure=False, markov_state="HEALTHY")
         assert state == "CRITICAL"
 
@@ -371,13 +369,14 @@ class TestClassifyStateBoundary:
         assert state == "HEALTHY"
 
     def test_node_pressure_adds_3(self):
-        """Node pressure adds 3 to the score."""
+        """Node pressure adds 3 to the score, producing a worse state."""
+        state_rank = {"HEALTHY": 0, "DEGRADED": 1, "STRESSED": 2, "CRITICAL": 3, "FAILED": 4, "RECOVERED": 5}
         state_no_pressure = classify_state(memory_pct=50, cpu_pct=50, restart_rate=0,
                                             log_errors=0, node_pressure=False, markov_state="HEALTHY")
         state_pressure = classify_state(memory_pct=50, cpu_pct=50, restart_rate=0,
                                          log_errors=0, node_pressure=True, markov_state="HEALTHY")
-        # With pressure, score should be higher (3 more points)
-        assert state_pressure >= state_no_pressure
+        # With pressure (+3), state should be worse (higher rank)
+        assert state_rank[state_pressure] > state_rank[state_no_pressure]
 
 
 # ─── Predictor boundary tests ───────────────────────────────────────────────

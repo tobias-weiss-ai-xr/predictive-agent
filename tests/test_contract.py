@@ -30,7 +30,7 @@ from predictive_agent.server import start_server
 
 # ─── Fixtures ───────────────────────────────────────────────────────────────
 
-@pytest.fixture(scope="class")
+@pytest.fixture(scope="module")
 def contract_server():
     """Start a server with populated state for contract testing."""
     sm = StateModel()
@@ -226,7 +226,7 @@ class TestPredictionsContract:
                 assert 0.0 <= pred["risk_score"] <= 0.99
                 assert "confidence" in pred and isinstance(pred["confidence"], (int, float))
                 assert 0.0 <= pred["confidence"] <= 1.0
-                assert "state" in pred and isinstance(pred["state"], str)
+                assert "markov_state" in pred and isinstance(pred["markov_state"], str)
                 assert "ttf_minutes" in pred
                 assert pred["ttf_minutes"] is None or isinstance(pred["ttf_minutes"], (int, float))
 
