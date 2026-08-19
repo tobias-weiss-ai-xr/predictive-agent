@@ -95,7 +95,13 @@ class Predictor:
         if memory_limit_mib > 0 and memory_trend_mib_per_min > 0:
             remaining = memory_limit_mib - memory_mib
             if remaining > 0:
-                ttf_minutes = int(remaining / memory_trend_mib_per_min)
+                # Guard against near-zero trends that produce infinity/overflow
+                if memory_trend_mib_per_min < 1e-10:
+                    ttf_minutes = None  # Trend too small to be meaningful
+                else:
+                    raw_ttf = remaining / memory_trend_mib_per_min
+                    # Cap at a sane maximum (30 days) to avoid overflow
+                    ttf_minutes = min(int(raw_ttf), 43200) if raw_ttf < 43200 else 43200
             else:
                 ttf_minutes = 0
 

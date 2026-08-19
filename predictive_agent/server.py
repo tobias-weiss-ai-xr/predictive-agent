@@ -153,6 +153,16 @@ class RequestHandler(BaseHTTPRequestHandler):
             "# HELP opendesk_predictive_agent_uptime_seconds Uptime in seconds",
             "# TYPE opendesk_predictive_agent_uptime_seconds gauge",
             f"opendesk_predictive_agent_uptime_seconds {uptime}",
+            "# HELP opendesk_predictive_agent_pod_risk_score Per-pod risk score (0-1)",
+            "# TYPE opendesk_predictive_agent_pod_risk_score gauge",
+        ]
+        # Per-pod risk score metrics
+        for p in predictions:
+            pod_key = p.pod_key if hasattr(p, 'pod_key') else p.get('pod_key', 'unknown')
+            risk_score = p.risk_score if hasattr(p, 'risk_score') else p.get('risk_score', 0)
+            lines.append(f"opendesk_predictive_agent_pod_risk_score{{pod=\"{pod_key}\"}} {risk_score}")
+        # Legacy dev_agent metrics (backward compatibility)
+        lines.extend([
             "# HELP opendesk_dev_agent_pods_tracked Number of pods currently tracked",
             "# TYPE opendesk_dev_agent_pods_tracked gauge",
             f"opendesk_dev_agent_pods_tracked {pods_tracked}",
@@ -162,7 +172,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             "# HELP opendesk_dev_agent_risk_score Highest current risk score (0-1)",
             "# TYPE opendesk_dev_agent_risk_score gauge",
             f"opendesk_dev_agent_risk_score {risk_score}",
-        ]
+        ])
         return "\n".join(lines) + "\n"
 
     def _status_dict(self):
@@ -180,6 +190,8 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def _predictions_dict(self):
         predictions = [_serialize_prediction(p) for p in _all_predictions(_context.predictor)]
+        # Sort by risk score descending (highest risk first)
+        predictions.sort(key=lambda p: p.get("risk_score", 0), reverse=True)
         return {
             "predictions": predictions,
             "total": len(predictions),
@@ -233,6 +245,8 @@ class RequestHandler(BaseHTTPRequestHandler):
 class HTTPServer(BaseHTTPServer):
     """Wrapper for the HTTP server to allow easier shutdown in tests."""
 
+    allow_reuse_address = True
+
     def shutdown_server(self):
         self.shutdown()
 
@@ -262,13 +276,13 @@ def start_server(metrics_port, health_port, state_model=None, predictor=None,
     _context.history = history if history is not None else []
     _context.start_time = time.time()
 
-    # Metrics and API server
-    metrics_server = BaseHTTPServer(("0.0.0.0", metrics_port), RequestHandler)
+    # Metrics and API server (use HTTPServer subclass with allow_reuse_address)
+    metrics_server = HTTPServer(("0.0.0.0", metrics_port), RequestHandler)
     metrics_thread = threading.Thread(target=metrics_server.serve_forever, daemon=True)
     metrics_thread.start()
 
     # Health server
-    health_server = BaseHTTPServer(("0.0.0.0", health_port), RequestHandler)
+    health_server = HTTPServer(("0.0.0.0", health_port), RequestHandler)
     health_thread = threading.Thread(target=health_server.serve_forever, daemon=True)
     health_thread.start()
 
