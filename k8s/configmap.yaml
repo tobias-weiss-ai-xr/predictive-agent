@@ -31,3 +31,22 @@ data:
 
   # Watch namespaces (comma-separated)
   OPERATOR_WATCH_NAMESPACES: "opendesk,opendesk-edu,default,llm,monitoring,backup,kube-system"
+
+  # Remediation configuration
+  REMEDIATION_ENABLED: "true"
+  REMEDIATION_DRY_RUN: "true"
+  REMEDIATION_MAX_PER_MIN: "5"
+  REMEDIATION_MAX_PER_HOUR: "50"
+  REMEDIATION_COOLDOWN_S: "300"
+  REMEDIATION_RISK_THRESHOLD: "70.0"
+  REMEDIATION_PROTECTED_NS: "kube-system,opendesk-predictive-agent"
+
+  # Alert configuration
+  ALERT_EMAIL_TO: "tobias.weiss@uni-marburg.de"
+
+  # SMTP configuration
+  SMTP_HOST: "smtp.uni-marburg.de"
+  SMTP_PORT: "587"
+
+  # Webhook configuration
+  WEBHOOK_URL: ""

@@ -16,13 +16,25 @@ metadata:
     app.kubernetes.io/name: opendesk-predictive-agent
     app.kubernetes.io/component: operator
 rules:
-  # Core resources — read-only (get, list, watch)
+  # Core resources — read-only with remediation write permissions
+  # pods: 'delete' for pod restart action (stuck/unhealthy pod remediation)
+  # events: 'create' for recording remediation events and audit trail
+  # nodes: 'patch' for cordon action (isolating problematic nodes)
   - apiGroups: [""]
     resources: ["pods", "pods/log", "events", "namespaces", "nodes", "services", "endpoints", "configmaps"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "delete", "create", "patch"]
   # Workloads
+  # deployments: 'patch', 'update' for rollout restart, scale, and resource tuning actions
+  # deployments/scale: 'patch' for HPA-style scaling remediation
+  # daemonsets, statefulsets, replicasets: read-only for monitoring only
   - apiGroups: ["apps"]
-    resources: ["deployments", "daemonsets", "statefulsets", "replicasets"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["daemonsets", "statefulsets", "replicasets"]
     verbs: ["get", "list", "watch"]
   # Batch
   - apiGroups: ["batch"]
