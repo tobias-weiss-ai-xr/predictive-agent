@@ -77,6 +77,7 @@ pkgs.dockerTools.buildLayeredImage {
       "OPERATOR_NAME=opendesk-predictive-agent"
       "OPERATOR_NAMESPACE=opendesk-predictive-agent"
       "OPERATOR_WATCH_NAMESPACES=opendesk,opendesk-edu,default,llm"
+      "COLLECTOR_MODE=kubectl"
       "LLM_BACKEND=ollama"
       "OLLAMA_URL=http://ollama.llm.svc.cluster.local:11434"
       "OLLAMA_MODEL=qwen3-30b-a3b:latest"
