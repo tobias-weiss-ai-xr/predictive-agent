@@ -93,4 +93,4 @@ def test_markov_chain_prior_counts():
     mc = MarkovChain()
     matrix = mc.transition_matrix()
     # HEALTHY should mostly stay HEALTHY with prior
-    assert matrix[0][0] > 0.8  # 95/100
+    assert matrix[0][0] > 0.8  # 9.5/10

@@ -138,6 +138,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_response(self._remediate_get())
         elif path == "/notifications":
             self._send_response(self._notifications_get())
+        elif path == "/backtest":
+            self._send_response(self._backtest_get())
         else:
             self._send_response({"error": "Not Found"}, status=404)
 
@@ -215,6 +217,17 @@ class RequestHandler(BaseHTTPRequestHandler):
             pod_key = p.pod_key if hasattr(p, 'pod_key') else p.get('pod_key', 'unknown')
             risk = p.risk_score if hasattr(p, 'risk_score') else p.get('risk_score', 0)
             lines.append(f"opendesk_predictive_agent_pod_risk_score{{pod=\"{pod_key}\"}} {risk}")
+        # Risk score histogram
+        risk_values = [p.risk_score for p in predictions if hasattr(p, 'risk_score')]
+        buckets = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+        lines.append("# HELP opendesk_predictive_agent_risk_score_bucket Distribution of risk scores")
+        lines.append("# TYPE opendesk_predictive_agent_risk_score_bucket histogram")
+        for le in buckets:
+            count = sum(1 for r in risk_values if r <= le)
+            lines.append(f"opendesk_predictive_agent_risk_score_bucket{{le=\"{le}\"}} {count}")
+        lines.append('opendesk_predictive_agent_risk_score_bucket{le="+Inf"} ' + str(len(risk_values)))
+        lines.append(f"opendesk_predictive_agent_risk_score_sum {sum(risk_values):.4f}")
+        lines.append(f"opendesk_predictive_agent_risk_score_count {len(risk_values)}")
         # Per-pod detailed metrics (CPU trend, memory trend, restart count, state, confidence)
         if sm is not None:
             lines.append("# HELP opendesk_predictive_agent_pod_cpu_trend Per-pod CPU trend (millicores/min)")
@@ -229,6 +242,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             lines.append("# TYPE opendesk_predictive_agent_kalman_confidence gauge")
             lines.append("# HELP opendesk_predictive_agent_markov_transition Per-pod Markov transition probability")
             lines.append("# TYPE opendesk_predictive_agent_markov_transition gauge")
+            lines.append("# HELP opendesk_predictive_agent_pod_anomaly_score Per-pod anomaly score (0=normal, >3=anomalous)")
+            lines.append("# TYPE opendesk_predictive_agent_pod_anomaly_score gauge")
             for pod_key, tracker in sm.pods.items():
                 cpu_trend = getattr(tracker, 'cpu_trend', 0.0) or 0.0
                 mem_trend = getattr(tracker, 'memory_trend', 0.0) or 0.0
@@ -237,11 +252,13 @@ class RequestHandler(BaseHTTPRequestHandler):
                 # Find matching prediction for confidence and markov state
                 confidence = 0.0
                 markov_p = 0.0
+                anomaly_score = 0.0
                 for p in predictions:
                     pk = p.pod_key if hasattr(p, 'pod_key') else p.get('pod_key', '')
                     if pk == pod_key:
                         confidence = p.confidence if hasattr(p, 'confidence') else p.get('confidence', 0.0)
                         markov_p = p.markov_p_critical if hasattr(p, 'markov_p_critical') else 0.0
+                        anomaly_score = p.anomaly_score if hasattr(p, 'anomaly_score') else 0.0
                         break
                 lines.append(f"opendesk_predictive_agent_pod_cpu_trend{{pod=\"{pod_key}\"}} {cpu_trend}")
                 lines.append(f"opendesk_predictive_agent_pod_mem_trend{{pod=\"{pod_key}\"}} {mem_trend}")
@@ -249,6 +266,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 lines.append(f"opendesk_predictive_agent_pod_state{{pod=\"{pod_key}\"}} {state_num}")
                 lines.append(f"opendesk_predictive_agent_kalman_confidence{{pod=\"{pod_key}\"}} {confidence}")
                 lines.append(f"opendesk_predictive_agent_markov_transition{{pod=\"{pod_key}\"}} {markov_p}")
+                lines.append(f"opendesk_predictive_agent_pod_anomaly_score{{pod=\"{pod_key}\"}} {anomaly_score}")
         # Remediation metrics (REM-8)
         rem = _context.remediation_manager
         if rem is not None:
@@ -410,6 +428,19 @@ class RequestHandler(BaseHTTPRequestHandler):
             return {"notifications": [], "total": 0, "message": "Notifier not initialized"}
         history = notifier.get_history(limit=50)
         return {"notifications": history, "total": len(history)}
+
+    def _backtest_get(self):
+        """GET /backtest — return prediction accuracy evaluation report."""
+        # Try to get backtester from main module context
+        try:
+            from predictive_agent import main as _main
+            bt = getattr(_main, "_backtester", None)
+            if bt is None:
+                return {"status": "disabled", "message": "Backtester not initialized"}
+            report = bt.evaluate()
+            return report.to_dict()
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
 
     def log_message(self, format, *args):
         # Suppress standard logging to keep test output clean

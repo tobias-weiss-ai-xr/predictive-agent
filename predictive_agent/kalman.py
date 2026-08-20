@@ -108,18 +108,45 @@ class KalmanTrend:
         return pred_level, pred_sigma
 
     def time_to_threshold(self, threshold, max_steps=180):
-        """Estimate time (steps) to reach threshold. Returns (steps, confidence)."""
+        """Estimate time (steps) to reach threshold. Returns (steps, confidence).
+
+        Confidence reflects how certain we are in the TTF estimate, based on
+        prediction uncertainty relative to the distance to threshold.
+        High confidence: prediction uncertainty is small compared to distance.
+        Low confidence: prediction uncertainty is large compared to distance.
+        """
         if self.velocity <= 0:
             return max_steps, 0.0
 
-        steps = (threshold - self.x[0]) / self.velocity
-        if steps <= 0:
-            return 0, 1.0
+        distance = threshold - self.x[0]
+        if distance <= 0:
+            return 0, 1.0  # Already at or above threshold
+
+        steps = distance / self.velocity
         if steps > max_steps:
             return max_steps, 0.0
 
         _, pred_sigma = self.predict(steps)
-        z = (pred_level_at_threshold := self.x[0] + self.x[1] * steps) - threshold
-        z = z / (pred_sigma + 1e-9)
-        confidence = 0.5 * (1 + math.erf(z / math.sqrt(2)))
+        # Confidence: high when prediction uncertainty is small relative to distance.
+        # Low when uncertainty is large relative to distance.
+        if distance > 1e-9:
+            confidence = max(0.0, min(1.0, 1.0 - (pred_sigma / distance)))
+        else:
+            confidence = 0.5
+
         return int(steps), confidence
+
+    def anomaly_score(self, measurement):
+        """Return anomaly score for a measurement (0 = normal, >3 = anomalous).
+
+        Uses the innovation (measurement - predicted level) normalized by
+        the level uncertainty (sigma). A score > 3 indicates a 3-sigma anomaly
+        (sudden spike or dip that the filter did not expect).
+        """
+        if not self.initialized:
+            return 0.0
+        innovation = abs(measurement - self.level)
+        sigma = self.level_uncertainty
+        if sigma < 1e-9:
+            return 0.0
+        return innovation / sigma

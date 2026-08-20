@@ -1,7 +1,17 @@
 """Pod state tracking with Kalman filters and state classification."""
 
+import os
+
 from predictive_agent.kalman import KalmanTrend
 from predictive_agent.markov import MarkovChain
+
+# Per-metric Kalman parameters (configurable via environment)
+# Memory changes gradually — low process noise, moderate measurement noise
+_KALMAN_MEM_PROCESS_NOISE = float(os.environ.get("KALMAN_MEMORY_PROCESS_NOISE", "0.5"))
+_KALMAN_MEM_MEASUREMENT_NOISE = float(os.environ.get("KALMAN_MEMORY_MEASUREMENT_NOISE", "50.0"))
+# CPU is noisier — higher process noise to track spikes, higher measurement noise
+_KALMAN_CPU_PROCESS_NOISE = float(os.environ.get("KALMAN_CPU_PROCESS_NOISE", "5.0"))
+_KALMAN_CPU_MEASUREMENT_NOISE = float(os.environ.get("KALMAN_CPU_MEASUREMENT_NOISE", "200.0"))
 
 
 def classify_state(memory_pct, cpu_pct, restart_rate, log_errors, node_pressure, markov_state):
@@ -87,14 +97,20 @@ def classify_state(memory_pct, cpu_pct, restart_rate, log_errors, node_pressure,
 class PodTracker:
     """Track state of a single pod using Kalman filters."""
 
-    def __init__(self, namespace, name):
+    def __init__(self, namespace, name, kalman_memory=None, kalman_cpu=None):
         self.namespace = namespace
         self.name = name
         self.pod_key = f"{namespace}/{name}"
         self.state = "HEALTHY"
         self.prev_state = "HEALTHY"
-        self.kalman_memory = KalmanTrend()
-        self.kalman_cpu = KalmanTrend()
+        self.kalman_memory = kalman_memory or KalmanTrend(
+            process_noise=_KALMAN_MEM_PROCESS_NOISE,
+            measurement_noise=_KALMAN_MEM_MEASUREMENT_NOISE,
+        )
+        self.kalman_cpu = kalman_cpu or KalmanTrend(
+            process_noise=_KALMAN_CPU_PROCESS_NOISE,
+            measurement_noise=_KALMAN_CPU_MEASUREMENT_NOISE,
+        )
         self.memory_pct = 0.0
         self.cpu_pct = 0.0
         self.memory_mib = 0
@@ -103,6 +119,8 @@ class PodTracker:
         self.restart_count = 0
         self.log_errors = 0
         self.node_pressure = False
+        self.memory_anomaly_score = 0.0
+        self.cpu_anomaly_score = 0.0
         self._timestamps = []
 
     def update(self, memory_mib, memory_limit_mib, cpu_m, restart_count, log_errors, node_pressure):
@@ -117,6 +135,10 @@ class PodTracker:
         # Update Kalman filters
         self.kalman_memory.update(memory_mib)
         self.kalman_cpu.update(cpu_m)
+
+        # Anomaly detection: 3-sigma innovation check
+        self.memory_anomaly_score = self.kalman_memory.anomaly_score(memory_mib)
+        self.cpu_anomaly_score = self.kalman_cpu.anomaly_score(cpu_m)
 
         # Calculate percentages
         if memory_limit_mib > 0:
@@ -227,6 +249,8 @@ class StateModel:
                 "restart_count": pod.restart_count,
                 "log_errors": pod.log_errors,
                 "node_pressure": pod.node_pressure,
+                "memory_anomaly_score": pod.memory_anomaly_score,
+                "cpu_anomaly_score": pod.cpu_anomaly_score,
             } for key, pod in self.pods.items()},
             "markov": self.markov.to_dict() if self.markov else None,
         }
@@ -247,6 +271,8 @@ class StateModel:
                 tracker.restart_count = pod_data["restart_count"]
                 tracker.log_errors = pod_data["log_errors"]
                 tracker.node_pressure = pod_data["node_pressure"]
+                tracker.memory_anomaly_score = pod_data.get("memory_anomaly_score", 0.0)
+                tracker.cpu_anomaly_score = pod_data.get("cpu_anomaly_score", 0.0)
 
                 # Restore Kalman filters
                 tracker.kalman_memory.__dict__ = pod_data["kalman_memory"]

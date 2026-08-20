@@ -20,6 +20,8 @@ class PredictionResult:
     cpu_trend: float
     memory_pct: float
     cpu_pct: float
+    anomaly_score: float = 0.0
+    blast_radius: int = 0
 
 
 class Predictor:
@@ -49,6 +51,10 @@ class Predictor:
         markov_state: str,
         markov_p_critical: float,
         markov_p_failed: float,
+        cpu_trend_m_per_min: float = 0.0,
+        memory_anomaly_score: float = 0.0,
+        cpu_anomaly_score: float = 0.0,
+        blast_radius: int = 0,
     ) -> PredictionResult:
         """Predict pod health and time-to-failure.
 
@@ -66,6 +72,10 @@ class Predictor:
             markov_state: Current Markov chain state
             markov_p_critical: Probability of transitioning to CRITICAL
             markov_p_failed: Probability of transitioning to FAILED
+            cpu_trend_m_per_min: CPU trend in millicores/min (from Kalman filter)
+            memory_anomaly_score: Memory anomaly score (0=normal, >3=anomalous)
+            cpu_anomaly_score: CPU anomaly score (0=normal, >3=anomalous)
+            blast_radius: Impact radius from knowledge graph (0=not connected)
 
         Returns:
             PredictionResult with risk score, TTF, confidence, and trends.
@@ -81,6 +91,10 @@ class Predictor:
             "node_disk_pressure": node_disk_pressure,
             "memory_limit_mib": memory_limit_mib,
             "memory_mib": memory_mib,
+            "cpu_trend_m_per_min": cpu_trend_m_per_min,
+            "memory_anomaly_score": memory_anomaly_score,
+            "cpu_anomaly_score": cpu_anomaly_score,
+            "blast_radius": blast_radius,
         }
 
         risk_score = calculate_risk(
@@ -121,9 +135,11 @@ class Predictor:
             confidence=confidence,
             markov_state=markov_state,
             memory_trend=memory_trend_mib_per_min,
-            cpu_trend=0.0,  # CPU trend not provided in input
+            cpu_trend=cpu_trend_m_per_min,
             memory_pct=memory_pct,
             cpu_pct=cpu_pct,
+            anomaly_score=max(memory_anomaly_score, cpu_anomaly_score),
+            blast_radius=blast_radius,
         )
 
         # Store prediction

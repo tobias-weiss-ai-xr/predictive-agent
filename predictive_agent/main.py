@@ -48,6 +48,8 @@ from predictive_agent.persistence import StateStore
 from predictive_agent.predictor import Predictor
 from predictive_agent.remediator import RemediationManager, create_remediation_manager_from_config
 from predictive_agent.state_model import StateModel
+from predictive_agent.kg_integration import get_kg_client, DGRAPH_URL
+from predictive_agent.backtester import Backtester
 
 logger = logging.getLogger("predictive-agent")
 
@@ -66,6 +68,8 @@ _notifier: Optional[NotificationManager] = None
 _llm_calls = 0
 _llm_errors = 0
 _state_saves = 0
+_kg_client = None
+_backtester = None
 
 
 def _now_iso() -> str:
@@ -258,6 +262,14 @@ def reconcile() -> Dict[str, Any]:
             restart_rate = restart_count  # Simplified: restarts per cycle
             log_error_rate = log_errors / 60.0  # Approximate per-minute rate
 
+            # Query knowledge graph for blast radius (0 if KG unavailable)
+            blast_radius = 0
+            if _kg_client is not None:
+                try:
+                    blast_radius = _kg_client.get_blast_radius(pod_key)
+                except Exception:
+                    blast_radius = 0
+
             result = _predictor.predict(
                 pod_key=pod_key,
                 memory_pct=tracker.memory_pct,
@@ -272,6 +284,10 @@ def reconcile() -> Dict[str, Any]:
                 markov_state=markov_state,
                 markov_p_critical=markov_p_critical,
                 markov_p_failed=markov_p_failed,
+                cpu_trend_m_per_min=tracker.cpu_trend,
+                memory_anomaly_score=tracker.memory_anomaly_score,
+                cpu_anomaly_score=tracker.cpu_anomaly_score,
+                blast_radius=blast_radius,
             )
 
             if result.risk_score >= _predictor.risk_threshold:
@@ -338,6 +354,37 @@ def reconcile() -> Dict[str, Any]:
                 _state_store.save_predictions(predictions_data)
         except Exception as e:
             logger.error("Failed to persist state: %s", e)
+
+    # ─── Record predictions for backtesting ───────────────────────────
+    if _backtester is not None and _predictor is not None:
+        for pod_key, tracker in _state_model.pods.items():
+            pred = _predictor._predictions.get(pod_key)
+            if pred is not None:
+                try:
+                    _backtester.record_prediction(
+                        pod_key=pod_key,
+                        risk_score=pred.risk_score,
+                        ttf_minutes=pred.ttf_minutes,
+                        confidence=pred.confidence,
+                        markov_state=pred.markov_state,
+                        memory_pct=pred.memory_pct,
+                        cpu_pct=pred.cpu_pct,
+                        memory_trend=pred.memory_trend,
+                        cpu_trend=pred.cpu_trend,
+                    )
+                    # Record outcome: failure if pod is in unhealthy state or has restarts
+                    actual_failure = (
+                        tracker.state in ("CRITICAL", "FAILED")
+                        or tracker.restart_count > 0
+                    )
+                    _backtester.record_outcome(
+                        pod_key=pod_key,
+                        actual_failure=actual_failure,
+                        restart_count=tracker.restart_count,
+                        state=tracker.state,
+                    )
+                except Exception as e:
+                    logger.debug("Backtester recording failed for %s: %s", pod_key, e)
 
     _last_reconcile_time = _now_iso()
 
@@ -455,7 +502,7 @@ def _start_http_server() -> Any:
 def main() -> None:
     """Main entry point — initialize state, start server, run reconcile loop."""
     global _state_model, _predictor, _state_store, _server
-    global _remediation_manager, _notifier
+    global _remediation_manager, _notifier, _kg_client, _backtester
 
     _setup_logging()
     logger.info("=== %s v%s starting ===", config.OPERATOR_NAME, config.OPERATOR_VERSION)
@@ -496,6 +543,19 @@ def main() -> None:
     # ─── Initialize notifications (REM-6) ──────────────────────────────
     _notifier = create_notifier_from_config()
     logger.info("Notification manager initialized")
+
+    # ─── Initialize knowledge graph integration ────────────────────────
+    _kg_client = get_kg_client()
+    if _kg_client and _kg_client.health():
+        logger.info("Knowledge graph connected at %s", DGRAPH_URL)
+    else:
+        logger.info("Knowledge graph not available (blast radius will be 0)")
+        _kg_client = None
+
+    # ─── Initialize backtester ────────────────────────────────────────
+    _backtester = Backtester()
+    logger.info("Backtester initialized (history: %d predictions, %d outcomes)",
+                _backtester.get_prediction_count(), _backtester.get_outcome_count())
 
     # Start HTTP server
     try:

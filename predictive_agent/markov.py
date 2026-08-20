@@ -12,14 +12,15 @@ class MarkovChain:
     STATES = ["HEALTHY", "DEGRADED", "STRESSED", "CRITICAL", "FAILED", "RECOVERED"]
     STATE_IDX = {s: i for i, s in enumerate(STATES)}
 
-    # Prior counts (pseudo-observations) — hand-tuned initial transitions
+    # Prior counts (pseudo-observations) — weak priors so real observations
+    # dominate after ~10 transitions instead of ~100.
     PRIOR_COUNTS = [
-        [95, 4, 1, 0, 0, 0],   # HEALTHY
-        [30, 50, 15, 4, 0, 1],  # DEGRADED
-        [10, 20, 40, 25, 4, 1], # STRESSED
-        [5, 5, 10, 60, 15, 5],  # CRITICAL
-        [0, 0, 0, 0, 80, 20],   # FAILED
-        [80, 15, 5, 0, 0, 0],   # RECOVERED
+        [9.5, 0.4, 0.1, 0, 0, 0],   # HEALTHY
+        [3, 5, 1.5, 0.4, 0, 0.1],    # DEGRADED
+        [1, 2, 4, 2.5, 0.4, 0.1],    # STRESSED
+        [0.5, 0.5, 1, 6, 1.5, 0.5],  # CRITICAL
+        [0, 0, 0, 0, 8, 2],          # FAILED
+        [8, 1.5, 0.5, 0, 0, 0],      # RECOVERED
     ]
 
     def __init__(self):

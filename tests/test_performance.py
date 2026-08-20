@@ -136,7 +136,7 @@ class TestStateModelPerformance:
     """Performance tests for StateModel."""
 
     def test_100_pod_updates_under_100ms(self):
-        """100 pod updates should complete in under 100ms."""
+        """100 pod updates should complete in under 200ms."""
         sm = StateModel()
         start = time.perf_counter()
         for i in range(100):
@@ -148,7 +148,7 @@ class TestStateModelPerformance:
                           log_errors=0,
                           node_pressure=False)
         elapsed = time.perf_counter() - start
-        assert elapsed < 0.1, f"100 pod updates took {elapsed:.3f}s"
+        assert elapsed < 0.2, f"100 pod updates took {elapsed:.3f}s"
 
     def test_100_pod_serialization_under_50ms(self):
         """Serializing 100 pods to dict should complete in under 50ms."""

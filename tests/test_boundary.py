@@ -185,7 +185,7 @@ class TestMarkovBoundary:
         mc.record_transition("UNKNOWN_STATE", "ALSO_UNKNOWN")
         assert mc.total_transitions == 1
         # Should have recorded in row 0, col 0
-        assert mc.counts[0][0] == 96  # 95 (prior) + 1
+        assert mc.counts[0][0] == 10.5  # 9.5 (prior) + 1
 
     def test_all_same_state_transitions(self):
         """Recording the same transition many times should converge."""

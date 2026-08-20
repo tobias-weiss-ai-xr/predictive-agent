@@ -43,6 +43,11 @@ PREDICTION_RISK_THRESHOLD = float(os.environ.get("PREDICTION_RISK_THRESHOLD", "0
 # ─── Kalman Filter ───────────────────────────────────────────────────────────
 KALMAN_PROCESS_NOISE = float(os.environ.get("KALMAN_PROCESS_NOISE", "1.0"))
 KALMAN_MEASUREMENT_NOISE = float(os.environ.get("KALMAN_MEASUREMENT_NOISE", "100.0"))
+# Per-metric Kalman parameters (override defaults for finer control)
+KALMAN_MEMORY_PROCESS_NOISE = float(os.environ.get("KALMAN_MEMORY_PROCESS_NOISE", "0.5"))
+KALMAN_MEMORY_MEASUREMENT_NOISE = float(os.environ.get("KALMAN_MEMORY_MEASUREMENT_NOISE", "50.0"))
+KALMAN_CPU_PROCESS_NOISE = float(os.environ.get("KALMAN_CPU_PROCESS_NOISE", "5.0"))
+KALMAN_CPU_MEASUREMENT_NOISE = float(os.environ.get("KALMAN_CPU_MEASUREMENT_NOISE", "200.0"))
 
 # ─── Persistence ─────────────────────────────────────────────────────────────
 STATE_MODEL_FILE = os.environ.get("STATE_MODEL_FILE", "/var/lib/opendesk/state-model.json")
