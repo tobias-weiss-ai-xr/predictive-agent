@@ -16,42 +16,42 @@ class TestPodRestartShouldExecute:
     def test_crashloopbackoff_triggers(self):
         action = PodRestartAction()
         pod = self._make_pod_state(phase="CrashLoopBackOff", restart_count=10)
-        assert action.should_execute(pod, None, 80.0) is True
+        assert action.should_execute(pod, None, 0.8) is True
 
     def test_failed_phase_triggers(self):
         action = PodRestartAction()
         pod = self._make_pod_state(phase="Failed", restart_count=0)
-        assert action.should_execute(pod, None, 80.0) is True
+        assert action.should_execute(pod, None, 0.8) is True
 
     def test_high_restart_count_triggers(self):
         action = PodRestartAction()
         pod = self._make_pod_state(phase="Running", restart_count=5)
-        assert action.should_execute(pod, None, 80.0) is True
+        assert action.should_execute(pod, None, 0.8) is True
 
     def test_low_restart_count_does_not_trigger(self):
         action = PodRestartAction()
         pod = self._make_pod_state(phase="Running", restart_count=2)
-        assert action.should_execute(pod, None, 80.0) is False
+        assert action.should_execute(pod, None, 0.8) is False
 
     def test_healthy_pod_does_not_trigger(self):
         action = PodRestartAction()
         pod = self._make_pod_state(phase="Running", restart_count=0)
-        assert action.should_execute(pod, None, 80.0) is False
+        assert action.should_execute(pod, None, 0.8) is False
 
     def test_low_risk_does_not_trigger(self):
         action = PodRestartAction()
         pod = self._make_pod_state(phase="Failed", restart_count=10)
-        assert action.should_execute(pod, None, 50.0) is False
+        assert action.should_execute(pod, None, 0.5) is False
 
     def test_protected_namespace_blocks(self):
         action = PodRestartAction()
         pod = self._make_pod_state(phase="CrashLoopBackOff", restart_count=10, namespace="kube-system")
-        assert action.should_execute(pod, None, 80.0) is False
+        assert action.should_execute(pod, None, 0.8) is False
 
     def test_protected_namespace_agent(self):
         action = PodRestartAction()
         pod = self._make_pod_state(phase="CrashLoopBackOff", restart_count=10, namespace="opendesk-predictive-agent")
-        assert action.should_execute(pod, None, 80.0) is False
+        assert action.should_execute(pod, None, 0.8) is False
 
 
 class TestPodRestartExecute:

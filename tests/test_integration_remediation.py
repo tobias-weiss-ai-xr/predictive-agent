@@ -37,7 +37,7 @@ def fresh_state():
     """Reset global state and provide fresh instances."""
     import predictive_agent.main as main_mod
     main_mod._state_model = StateModel()
-    main_mod._predictor = Predictor(risk_threshold=70.0)
+    main_mod._predictor = Predictor(risk_threshold=0.7)
     main_mod._state_store = None
     main_mod._remediation_manager = None
     main_mod._notifier = None
@@ -53,7 +53,7 @@ class TestRemediationIntegration:
         """Test that reconcile runs without errors when remediation manager is registered."""
         # Setup remediation manager (dry_run mode)
         policy = SafetyPolicy(cooldown_seconds=0, max_per_minute=100, max_per_hour=1000)
-        rem_mgr = RemediationManager(dry_run=True, risk_threshold=70.0, safety_policy=policy)
+        rem_mgr = RemediationManager(dry_run=True, risk_threshold=0.7, safety_policy=policy)
         rem_mgr.register_action(PodRestartAction())
         fresh_state._remediation_manager = rem_mgr
 
@@ -68,7 +68,7 @@ class TestRemediationIntegration:
 
     def test_reconcile_includes_remediation_stats(self, fresh_state):
         """Test that reconcile output includes remediation stats."""
-        rem_mgr = RemediationManager(dry_run=True, risk_threshold=70.0)
+        rem_mgr = RemediationManager(dry_run=True, risk_threshold=0.7)
         fresh_state._remediation_manager = rem_mgr
 
         with patch("predictive_agent.main.run_cmd") as mock_run:
@@ -95,14 +95,14 @@ class TestServerRemediationEndpoints:
     @pytest.fixture(scope="class")
     def server_with_remediation(self):
         """Start server with remediation manager and notifier."""
-        rem_mgr = RemediationManager(dry_run=True, risk_threshold=70.0)
+        rem_mgr = RemediationManager(dry_run=True, risk_threshold=0.7)
         rem_mgr.register_action(PodRestartAction())
         notifier = NotificationManager(
             email_notifier=MagicMock(spec=EmailNotifier),
             webhook_notifier=MagicMock(spec=WebhookNotifier),
         )
         sm = StateModel()
-        pred = Predictor(risk_threshold=70.0)
+        pred = Predictor(risk_threshold=0.7)
         server = start_server(
             metrics_port=18120,
             health_port=18121,
@@ -156,7 +156,7 @@ class TestServerRemediationEndpoints:
     def test_post_remediate_pod_not_found(self, server_with_remediation):
         """Test POST /remediate with non-existent pod."""
         import urllib.request
-        payload = json.dumps({"pod_name": "nonexistent/pod", "risk_score": 85.0}).encode()
+        payload = json.dumps({"pod_name": "nonexistent/pod", "risk_score": 0.85}).encode()
         req = urllib.request.Request(
             "http://127.0.0.1:18120/remediate",
             data=payload,
@@ -171,7 +171,7 @@ class TestServerRemediationEndpoints:
     def test_post_remediate_missing_pod_name(self, server_with_remediation):
         """Test POST /remediate without pod_name."""
         import urllib.request
-        payload = json.dumps({"risk_score": 85.0}).encode()
+        payload = json.dumps({"risk_score": 0.85}).encode()
         req = urllib.request.Request(
             "http://127.0.0.1:18120/remediate",
             data=payload,
@@ -219,7 +219,7 @@ class TestFullRemediationCycle:
     def test_remediation_evaluates_actions_on_high_risk_pod(self):
         """Test that RemediationManager evaluates all registered actions."""
         policy = SafetyPolicy(cooldown_seconds=0, max_per_minute=100, max_per_hour=1000)
-        mgr = RemediationManager(dry_run=True, risk_threshold=70.0, safety_policy=policy)
+        mgr = RemediationManager(dry_run=True, risk_threshold=0.7, safety_policy=policy)
         mgr.register_action(PodRestartAction())
         mgr.register_action(RightSizeAction())
 
@@ -235,7 +235,7 @@ class TestFullRemediationCycle:
         # Mock subprocess so kubectl delete succeeds (dry run)
         with patch("predictive_agent.actions.pod_restart.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="pod deleted (dry run)", stderr="")
-            results = mgr.evaluate(pod_state, None, 85.0)
+            results = mgr.evaluate(pod_state, None, 0.85)
 
         assert len(results) > 0
         # At least one action should have been executed
@@ -244,7 +244,7 @@ class TestFullRemediationCycle:
 
     def test_remediation_skips_low_risk(self):
         """Test that remediation is skipped when risk is below threshold."""
-        mgr = RemediationManager(dry_run=True, risk_threshold=70.0)
+        mgr = RemediationManager(dry_run=True, risk_threshold=0.7)
         mgr.register_action(PodRestartAction())
 
         pod_state = MagicMock()
@@ -253,7 +253,7 @@ class TestFullRemediationCycle:
         pod_state.phase = "CrashLoopBackOff"
         pod_state.restart_count = 10
 
-        results = mgr.evaluate(pod_state, None, 50.0)
+        results = mgr.evaluate(pod_state, None, 0.5)
         assert len(results) == 0
 
     def test_notification_sent_on_remediation(self):
@@ -277,7 +277,7 @@ class TestFullRemediationCycle:
             email_sent, webhook_sent = notifier.notify(
                 alert_type="remediation",
                 pod_name="default/test-pod",
-                risk_score=85.0,
+                risk_score=0.85,
                 action_taken=result.action,
                 details=result.message,
             )
@@ -307,7 +307,7 @@ class TestFullRemediationCycle:
 
     def test_all_six_actions_registered(self):
         """Test that all 6 remediation actions can be registered together."""
-        mgr = RemediationManager(dry_run=True, risk_threshold=70.0)
+        mgr = RemediationManager(dry_run=True, risk_threshold=0.7)
         mgr.register_action(PodRestartAction())
         mgr.register_action(NodeCordonAction())
         mgr.register_action(RightSizeAction())
@@ -326,7 +326,7 @@ class TestFullRemediationCycle:
     def test_audit_trail_records_all_actions(self):
         """Test that audit trail records all actions, including skipped ones."""
         policy = SafetyPolicy(cooldown_seconds=0, max_per_minute=100, max_per_hour=1000)
-        mgr = RemediationManager(dry_run=True, risk_threshold=70.0, safety_policy=policy)
+        mgr = RemediationManager(dry_run=True, risk_threshold=0.7, safety_policy=policy)
         mgr.register_action(PodRestartAction())
 
         # First action should succeed
@@ -338,7 +338,7 @@ class TestFullRemediationCycle:
         pod_state.data_points = 15
         pod_state.cpu_pct = 50
 
-        mgr.evaluate(pod_state, None, 85.0)
+        mgr.evaluate(pod_state, None, 0.85)
         trail = mgr.get_audit_trail(limit=100)
         assert len(trail) >= 1
         assert trail[0]["action"] == "pod_restart"

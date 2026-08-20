@@ -36,7 +36,7 @@ class TestTuneResourcesShouldExecute:
     def test_low_risk_does_not_trigger(self):
         action = ResourceTunerAction()
         pod = self._make_pod_state(data_points=15, trend_confidence=0.9)
-        assert action.should_execute(pod, None, 50.0) is False
+        assert action.should_execute(pod, None, 0.5) is False
 
     def test_protected_namespace_blocks(self):
         action = ResourceTunerAction()

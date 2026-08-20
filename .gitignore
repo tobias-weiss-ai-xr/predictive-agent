@@ -10,3 +10,4 @@ build/
 # taskfleet worktrees (do not commit)
 .tf-worktrees/
 .coverage
+result

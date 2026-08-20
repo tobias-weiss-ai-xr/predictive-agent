@@ -16,39 +16,39 @@ class TestNodeCordonShouldExecute:
     def test_high_cpu_triggers(self):
         action = NodeCordonAction()
         node = self._make_node_state(cpu_pct=95, mem_pct=50)
-        assert action.should_execute(node, None, 85.0) is True
+        assert action.should_execute(node, None, 0.85) is True
 
     def test_high_memory_triggers(self):
         action = NodeCordonAction()
         node = self._make_node_state(cpu_pct=50, mem_pct=95)
-        assert action.should_execute(node, None, 85.0) is True
+        assert action.should_execute(node, None, 0.85) is True
 
     def test_low_resource_does_not_trigger(self):
         action = NodeCordonAction()
         node = self._make_node_state(cpu_pct=50, mem_pct=50)
-        assert action.should_execute(node, None, 85.0) is False
+        assert action.should_execute(node, None, 0.85) is False
 
     def test_low_risk_does_not_trigger(self):
         action = NodeCordonAction()
         node = self._make_node_state(cpu_pct=95, mem_pct=95)
-        assert action.should_execute(node, None, 70.0) is False
+        assert action.should_execute(node, None, 0.7) is False
 
     def test_few_healthy_nodes_blocks(self):
         action = NodeCordonAction()
         node = self._make_node_state(cpu_pct=95, mem_pct=95, healthy_nodes=1)
-        assert action.should_execute(node, None, 85.0) is False
+        assert action.should_execute(node, None, 0.85) is False
 
     def test_exact_threshold_does_not_trigger(self):
         """CPU exactly at 90% should NOT trigger (uses >)."""
         action = NodeCordonAction()
         node = self._make_node_state(cpu_pct=90, mem_pct=50)
-        assert action.should_execute(node, None, 85.0) is False
+        assert action.should_execute(node, None, 0.85) is False
 
     def test_just_above_threshold_triggers(self):
         """CPU at 91% should trigger."""
         action = NodeCordonAction()
         node = self._make_node_state(cpu_pct=91, mem_pct=50)
-        assert action.should_execute(node, None, 85.0) is True
+        assert action.should_execute(node, None, 0.85) is True
 
 
 class TestNodeCordonExecute:

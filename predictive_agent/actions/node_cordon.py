@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 # Thresholds
 NODE_CPU_THRESHOLD = 90.0
 NODE_MEM_THRESHOLD = 90.0
-RISK_THRESHOLD = 80.0
+RISK_THRESHOLD = 0.8
 MIN_HEALTHY_NODES = 2
 
 
@@ -31,7 +31,7 @@ class NodeCordonAction(RemediationAction):
 
         Returns True when:
         - Node CPU > 90% or memory > 90%
-        - risk_score > 80 (higher than pod restart — cordon is more disruptive)
+        - risk_score > 0.8 (higher than pod restart — cordon is more disruptive)
         - At least 2 other healthy nodes available
         """
         if risk_score <= RISK_THRESHOLD:

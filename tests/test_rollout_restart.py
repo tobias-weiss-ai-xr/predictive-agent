@@ -20,33 +20,33 @@ class TestRolloutRestartShouldExecute:
     def test_multiple_failing_pods_triggers(self):
         action = RolloutRestartAction()
         pod = self._make_pod_state(restart_count=5, failing_pods=2)
-        assert action.should_execute(pod, None, 80.0) is True
+        assert action.should_execute(pod, None, 0.8) is True
 
     def test_single_failing_pod_does_not_trigger(self):
         action = RolloutRestartAction()
         pod = self._make_pod_state(restart_count=5, failing_pods=1)
-        assert action.should_execute(pod, None, 80.0) is False
+        assert action.should_execute(pod, None, 0.8) is False
 
     def test_low_restart_count_does_not_trigger(self):
         action = RolloutRestartAction()
         pod = self._make_pod_state(restart_count=2, failing_pods=2)
-        assert action.should_execute(pod, None, 80.0) is False
+        assert action.should_execute(pod, None, 0.8) is False
 
     def test_low_risk_does_not_trigger(self):
         action = RolloutRestartAction()
         pod = self._make_pod_state(restart_count=5, failing_pods=2)
-        assert action.should_execute(pod, None, 70.0) is False
+        assert action.should_execute(pod, None, 0.7) is False
 
     def test_protected_namespace_blocks(self):
         action = RolloutRestartAction()
         pod = self._make_pod_state(restart_count=5, failing_pods=2, namespace="kube-system")
-        assert action.should_execute(pod, None, 80.0) is False
+        assert action.should_execute(pod, None, 0.8) is False
 
     def test_exact_restart_threshold(self):
         """Exactly 3 restarts should trigger (>= MIN_RESTART_COUNT)."""
         action = RolloutRestartAction()
         pod = self._make_pod_state(restart_count=3, failing_pods=2)
-        assert action.should_execute(pod, None, 80.0) is True
+        assert action.should_execute(pod, None, 0.8) is True
 
 
 class TestRolloutRestartExecute:

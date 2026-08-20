@@ -23,7 +23,7 @@ data:
 
   # Prediction configuration
   PREDICTION_ENABLED: "true"
-  PREDICTION_RISK_THRESHOLD: "0.5"
+  PREDICTION_RISK_THRESHOLD: "0.3"
 
   # Kalman filter tuning
   KALMAN_PROCESS_NOISE: "1.0"
@@ -43,7 +43,7 @@ data:
   REMEDIATION_MAX_PER_MIN: "5"
   REMEDIATION_MAX_PER_HOUR: "50"
   REMEDIATION_COOLDOWN_S: "300"
-  REMEDIATION_RISK_THRESHOLD: "70.0"
+  REMEDIATION_RISK_THRESHOLD: "0.7"
   REMEDIATION_PROTECTED_NS: "kube-system,opendesk-predictive-agent"
 
   # Alert configuration

@@ -17,28 +17,28 @@ class TestRightSizeShouldExecute:
     def test_stable_pod_triggers(self):
         action = RightSizeAction()
         pod = self._make_pod_state(restart_count=0, data_points=15)
-        assert action.should_execute(pod, None, 55.0) is True
+        assert action.should_execute(pod, None, 0.55) is True
 
     def test_pod_with_restarts_does_not_trigger(self):
         action = RightSizeAction()
         pod = self._make_pod_state(restart_count=3, data_points=15)
-        assert action.should_execute(pod, None, 55.0) is False
+        assert action.should_execute(pod, None, 0.55) is False
 
     def test_insufficient_data_does_not_trigger(self):
         action = RightSizeAction()
         pod = self._make_pod_state(restart_count=0, data_points=5)
-        assert action.should_execute(pod, None, 55.0) is False
+        assert action.should_execute(pod, None, 0.55) is False
 
     def test_low_risk_does_not_trigger(self):
         action = RightSizeAction()
         pod = self._make_pod_state(restart_count=0, data_points=15)
-        assert action.should_execute(pod, None, 40.0) is False
+        assert action.should_execute(pod, None, 0.4) is False
 
     def test_exact_data_points_threshold(self):
         """Exactly 10 data points should trigger (>= MIN_DATA_POINTS)."""
         action = RightSizeAction()
         pod = self._make_pod_state(restart_count=0, data_points=10)
-        assert action.should_execute(pod, None, 55.0) is True
+        assert action.should_execute(pod, None, 0.55) is True
 
 
 class TestRightSizeExecute:

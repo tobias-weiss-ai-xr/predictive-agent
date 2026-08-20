@@ -150,7 +150,7 @@ class RemediationAction(ABC):
         Args:
             pod_state: PodTracker with current pod state
             prediction: PredictionResult with trend predictions
-            risk_score: Bayesian risk score (0-100)
+            risk_score: Bayesian risk score (0-1)
 
         Returns:
             True if this action should be executed
@@ -181,7 +181,7 @@ class RemediationManager:
     def __init__(
         self,
         dry_run: bool = True,
-        risk_threshold: float = 70.0,
+        risk_threshold: float = 0.7,
         safety_policy: Optional[SafetyPolicy] = None,
     ):
         self.dry_run = dry_run
@@ -322,6 +322,6 @@ def create_remediation_manager_from_config() -> RemediationManager:
 
     return RemediationManager(
         dry_run=dry_run,
-        risk_threshold=float(os.environ.get("REMEDIATION_RISK_THRESHOLD", "70.0")),
+        risk_threshold=float(os.environ.get("REMEDIATION_RISK_THRESHOLD", "0.7")),
         safety_policy=policy,
     )

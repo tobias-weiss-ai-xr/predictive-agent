@@ -299,9 +299,7 @@ def reconcile() -> Dict[str, Any]:
 
                 # ─── Remediation (REM-8) ────────────────────────────────
                 if _remediation_manager is not None:
-                    # Enrich pod_state with prediction data for actions
-                    tracker.cpu_trend = result.cpu_trend
-                    tracker.memory_trend = result.memory_trend
+                    # pod_state already has cpu_trend/memory_trend via Kalman filters
                     try:
                         results = _remediation_manager.evaluate(
                             tracker, result, result.risk_score

@@ -20,7 +20,7 @@ OVERPROVISION_THRESHOLD = 0.50   # usage < 50% of request
 LIMIT_UNDERPROVISION = 0.80      # usage > 80% of limit
 LIMIT_OVERPROVISION = 0.50       # usage < 50% of limit
 MIN_DATA_POINTS = 10             # need at least 10 cycles of data
-RISK_THRESHOLD = 50.0            # lower threshold — advisory action
+RISK_THRESHOLD = 0.5            # lower threshold — advisory action
 
 
 class RightSizeAction(RemediationAction):
@@ -34,7 +34,7 @@ class RightSizeAction(RemediationAction):
         Returns True when:
         - Pod has been stable for 10+ cycles (no recent restarts)
         - Actual resource usage is <50% or >90% of requests
-        - risk_score > 50 (lower threshold — advisory)
+        - risk_score > 0.5 (lower threshold — advisory)
         """
         if risk_score <= RISK_THRESHOLD:
             return False

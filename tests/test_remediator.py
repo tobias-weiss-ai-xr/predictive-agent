@@ -202,36 +202,36 @@ class TestRemediationManager:
         assert manager.actions[0].name == "test_action"
 
     def test_evaluate_below_threshold(self):
-        manager = RemediationManager(risk_threshold=70.0)
+        manager = RemediationManager(risk_threshold=0.7)
         manager.register_action(self._make_action())
         # Risk below threshold: no actions
-        results = manager.evaluate(None, None, 50.0)
+        results = manager.evaluate(None, None, 0.5)
         assert results == []
 
     def test_evaluate_above_threshold(self):
-        manager = RemediationManager(risk_threshold=70.0)
+        manager = RemediationManager(risk_threshold=0.7)
         manager.register_action(self._make_action())
-        results = manager.evaluate(None, None, 80.0)
+        results = manager.evaluate(None, None, 0.8)
         assert len(results) == 1
         assert results[0].success is True
 
     def test_evaluate_action_not_triggered(self):
-        manager = RemediationManager(risk_threshold=70.0)
+        manager = RemediationManager(risk_threshold=0.7)
         manager.register_action(self._make_action(should_exec=False))
-        results = manager.evaluate(None, None, 80.0)
+        results = manager.evaluate(None, None, 0.8)
         assert results == []
 
     def test_audit_trail(self):
-        manager = RemediationManager(risk_threshold=70.0)
+        manager = RemediationManager(risk_threshold=0.7)
         manager.register_action(self._make_action())
-        manager.evaluate(None, None, 80.0)
+        manager.evaluate(None, None, 0.8)
         assert len(manager.audit_trail) == 1
         assert manager.audit_trail[0].action == "test_action"
 
     def test_dry_run_mode(self):
-        manager = RemediationManager(dry_run=True, risk_threshold=70.0)
+        manager = RemediationManager(dry_run=True, risk_threshold=0.7)
         manager.register_action(self._make_action())
-        results = manager.evaluate(None, None, 80.0)
+        results = manager.evaluate(None, None, 0.8)
         assert results[0].dry_run is True
 
     def test_get_audit_trail_limit(self):
@@ -240,14 +240,14 @@ class TestRemediationManager:
         manager = RemediationManager(risk_threshold=0.0, safety_policy=policy)
         manager.register_action(self._make_action())
         for i in range(25):
-            manager.evaluate(MagicMock(name=f"pod-{i}", namespace="default"), None, 80.0)
+            manager.evaluate(MagicMock(name=f"pod-{i}", namespace="default"), None, 0.8)
         trail = manager.get_audit_trail(limit=10)
         assert len(trail) == 10
 
     def test_get_stats(self):
-        manager = RemediationManager(dry_run=True, risk_threshold=70.0)
+        manager = RemediationManager(dry_run=True, risk_threshold=0.7)
         manager.register_action(self._make_action())
-        manager.evaluate(None, None, 80.0)
+        manager.evaluate(None, None, 0.8)
         stats = manager.get_stats()
         assert stats["total_actions"] == 1
         assert stats["successful_actions"] == 1
@@ -255,7 +255,7 @@ class TestRemediationManager:
         assert "test_action" in stats["registered_actions"]
 
     def test_evaluate_exception_handling(self):
-        manager = RemediationManager(risk_threshold=70.0)
+        manager = RemediationManager(risk_threshold=0.7)
 
         class FailingAction(RemediationAction):
             name = "failing"
@@ -265,7 +265,7 @@ class TestRemediationManager:
                 raise RuntimeError("boom")
 
         manager.register_action(FailingAction())
-        results = manager.evaluate(None, None, 80.0)
+        results = manager.evaluate(None, None, 0.8)
         assert len(results) == 1
         assert results[0].success is False
         assert "boom" in results[0].message
@@ -281,12 +281,12 @@ class TestCreateFromConfig:
             "REMEDIATION_MAX_PER_MIN": "5",
             "REMEDIATION_MAX_PER_HOUR": "50",
             "REMEDIATION_COOLDOWN_S": "300",
-            "REMEDIATION_RISK_THRESHOLD": "70.0",
+            "REMEDIATION_RISK_THRESHOLD": "0.7",
             "REMEDIATION_PROTECTED_NS": "kube-system,opendesk-predictive-agent",
         }):
             manager = create_remediation_manager_from_config()
             assert manager.dry_run is True
-            assert manager.risk_threshold == 70.0
+            assert manager.risk_threshold == 0.7
             assert "kube-system" in manager.safety_policy.protected_namespaces
 
     def test_enabled_with_dry_run_false(self):
@@ -296,7 +296,7 @@ class TestCreateFromConfig:
             "REMEDIATION_MAX_PER_MIN": "5",
             "REMEDIATION_MAX_PER_HOUR": "50",
             "REMEDIATION_COOLDOWN_S": "300",
-            "REMEDIATION_RISK_THRESHOLD": "70.0",
+            "REMEDIATION_RISK_THRESHOLD": "0.7",
             "REMEDIATION_PROTECTED_NS": "kube-system",
         }):
             manager = create_remediation_manager_from_config()
@@ -309,7 +309,7 @@ class TestCreateFromConfig:
             "REMEDIATION_MAX_PER_MIN": "5",
             "REMEDIATION_MAX_PER_HOUR": "50",
             "REMEDIATION_COOLDOWN_S": "300",
-            "REMEDIATION_RISK_THRESHOLD": "70.0",
+            "REMEDIATION_RISK_THRESHOLD": "0.7",
             "REMEDIATION_PROTECTED_NS": "kube-system",
         }):
             manager = create_remediation_manager_from_config()

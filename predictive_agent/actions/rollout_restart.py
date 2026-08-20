@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 # Thresholds
 MIN_FAILING_PODS = 2       # need 2+ failing pods to warrant rollout restart
 MIN_RESTART_COUNT = 3      # pods must have 3+ restarts
-RISK_THRESHOLD = 75.0
+RISK_THRESHOLD = 0.75
 ROLLOUT_COOLDOWN = 600     # 10 minutes between rollout restarts of same deployment
 
 
@@ -31,7 +31,7 @@ class RolloutRestartAction(RemediationAction):
 
         Returns True when:
         - Multiple pods from the same deployment are failing (2+ with restart_count > 3)
-        - risk_score > 75
+        - risk_score > 0.75
         - Deployment is NOT in a protected namespace
         """
         if risk_score <= RISK_THRESHOLD:

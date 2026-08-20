@@ -20,7 +20,7 @@ MIN_REPLICAS = 1
 MAX_REPLICAS = 10
 SCALE_COOLDOWN = 600          # 10 minutes between scaling actions
 SUSTAINED_CYCLES = 5          # need 5+ cycles of high/low CPU
-RISK_THRESHOLD = 75.0
+RISK_THRESHOLD = 0.75
 
 
 class DeploymentScaleAction(RemediationAction):
@@ -34,7 +34,7 @@ class DeploymentScaleAction(RemediationAction):
         Returns True when:
         - CPU consistently high (>80% for 5+ cycles) → scale up
         - CPU consistently low (<20% for 5+ cycles) → scale down
-        - risk_score > 75
+        - risk_score > 0.75
         - NOT in protected namespace
         """
         if risk_score <= RISK_THRESHOLD:

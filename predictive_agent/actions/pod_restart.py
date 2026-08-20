@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # Thresholds
 MIN_RESTART_COUNT = 5
-RISK_THRESHOLD = 70.0
+RISK_THRESHOLD = 0.7
 
 
 class PodRestartAction(RemediationAction):
@@ -30,7 +30,7 @@ class PodRestartAction(RemediationAction):
         - Pod phase is Failed, or
         - Restart count >= 5, or
         - Pod is in CrashLoopBackOff/OOMKilled
-        - AND risk_score > 70
+        - AND risk_score > 0.7
         - AND pod is NOT in a protected namespace
         """
         if risk_score <= RISK_THRESHOLD:

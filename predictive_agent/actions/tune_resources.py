@@ -20,7 +20,7 @@ OVERPROVISION_FACTOR = 2.0   # current > 2x actual → reduce
 UNDERPROVISION_FACTOR = 0.5  # current < 0.5x actual → increase
 MIN_CONFIDENCE = 0.8         # need high confidence to auto-tune
 TUNE_COOLDOWN = 1800         # 30 minutes between tune actions
-RISK_THRESHOLD = 60.0
+RISK_THRESHOLD = 0.6
 
 
 class ResourceTunerAction(RemediationAction):
@@ -35,7 +35,7 @@ class ResourceTunerAction(RemediationAction):
         - Pod has stable usage (10+ data points)
         - Current requests/limits are significantly off (>2x or <0.5x actual)
         - Confidence > 0.8
-        - risk_score > 60
+        - risk_score > 0.6
         - NOT in protected namespace
         """
         if risk_score <= RISK_THRESHOLD:

@@ -16,49 +16,49 @@ class TestScaleShouldExecute:
     def test_high_cpu_triggers(self):
         action = DeploymentScaleAction()
         pod = self._make_pod_state(cpu_pct=85, data_points=10)
-        assert action.should_execute(pod, None, 80.0) is True
+        assert action.should_execute(pod, None, 0.8) is True
 
     def test_low_cpu_triggers(self):
         action = DeploymentScaleAction()
         pod = self._make_pod_state(cpu_pct=15, data_points=10)
-        assert action.should_execute(pod, None, 80.0) is True
+        assert action.should_execute(pod, None, 0.8) is True
 
     def test_normal_cpu_does_not_trigger(self):
         action = DeploymentScaleAction()
         pod = self._make_pod_state(cpu_pct=50, data_points=10)
-        assert action.should_execute(pod, None, 80.0) is False
+        assert action.should_execute(pod, None, 0.8) is False
 
     def test_insufficient_data_does_not_trigger(self):
         action = DeploymentScaleAction()
         pod = self._make_pod_state(cpu_pct=85, data_points=3)
-        assert action.should_execute(pod, None, 80.0) is False
+        assert action.should_execute(pod, None, 0.8) is False
 
     def test_low_risk_does_not_trigger(self):
         action = DeploymentScaleAction()
         pod = self._make_pod_state(cpu_pct=85, data_points=10)
-        assert action.should_execute(pod, None, 70.0) is False
+        assert action.should_execute(pod, None, 0.7) is False
 
     def test_protected_namespace_blocks(self):
         action = DeploymentScaleAction()
         pod = self._make_pod_state(cpu_pct=85, data_points=10, namespace="kube-system")
-        assert action.should_execute(pod, None, 80.0) is False
+        assert action.should_execute(pod, None, 0.8) is False
 
     def test_protected_namespace_agent(self):
         action = DeploymentScaleAction()
         pod = self._make_pod_state(cpu_pct=85, data_points=10, namespace="opendesk-predictive-agent")
-        assert action.should_execute(pod, None, 80.0) is False
+        assert action.should_execute(pod, None, 0.8) is False
 
     def test_exact_high_threshold(self):
         """CPU exactly at 80% should NOT trigger (uses >)."""
         action = DeploymentScaleAction()
         pod = self._make_pod_state(cpu_pct=80, data_points=10)
-        assert action.should_execute(pod, None, 80.0) is False
+        assert action.should_execute(pod, None, 0.8) is False
 
     def test_just_above_high_threshold(self):
         """CPU at 81% should trigger."""
         action = DeploymentScaleAction()
         pod = self._make_pod_state(cpu_pct=81, data_points=10)
-        assert action.should_execute(pod, None, 80.0) is True
+        assert action.should_execute(pod, None, 0.8) is True
 
 
 class TestScaleExecute:
