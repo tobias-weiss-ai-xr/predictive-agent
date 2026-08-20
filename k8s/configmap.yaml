@@ -28,6 +28,11 @@ data:
   # Kalman filter tuning
   KALMAN_PROCESS_NOISE: "1.0"
   KALMAN_MEASUREMENT_NOISE: "100.0"
+  # Per-metric Kalman parameters (memory=smooth, CPU=noisy)
+  KALMAN_MEMORY_PROCESS_NOISE: "0.5"
+  KALMAN_MEMORY_MEASUREMENT_NOISE: "50.0"
+  KALMAN_CPU_PROCESS_NOISE: "5.0"
+  KALMAN_CPU_MEASUREMENT_NOISE: "200.0"
 
   # Watch namespaces (comma-separated)
   OPERATOR_WATCH_NAMESPACES: "opendesk,opendesk-edu,default,llm,monitoring,backup,kube-system"

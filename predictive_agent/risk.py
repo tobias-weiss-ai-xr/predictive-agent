@@ -31,7 +31,7 @@ def calculate_risk(pod_metrics, markov_state, markov_p_critical, markov_p_failed
     Returns:
         float: risk score 0.0 to 0.99
     """
-    prior = 0.01  # base rate
+    prior = 0.02  # base rate (~2% of pods experience issues per cycle)
     lr = 1.0  # likelihood ratio multiplier
 
     mem_pct = pod_metrics.get("memory_pct", 0)
@@ -48,11 +48,11 @@ def calculate_risk(pod_metrics, markov_state, markov_p_critical, markov_p_failed
 
     # Memory percentage
     if mem_pct > 95:
-        lr *= 10.0
+        lr *= 12.0
     elif mem_pct > 85:
-        lr *= 5.0
+        lr *= 6.0
     elif mem_pct > 70:
-        lr *= 2.0
+        lr *= 2.5
 
     # Memory trend + time to OOM
     if mem_trend > 0 and mem_pct > 70:
@@ -79,19 +79,24 @@ def calculate_risk(pod_metrics, markov_state, markov_p_critical, markov_p_failed
     elif cpu_trend > 20:
         lr *= 1.3
 
-    # Restart rate
+    # Restart rate (any restart is a strong signal — backtester shows
+    # restart_count > 0 correlates with actual failures)
     if restart_rate > 5:
-        lr *= 10.0
+        lr *= 15.0
     elif restart_rate > 3:
-        lr *= 4.0
+        lr *= 10.0
     elif restart_rate > 1:
-        lr *= 2.0
+        lr *= 6.0
+    elif restart_rate > 0:
+        lr *= 3.0
 
     # Log errors
     if log_error_rate > 10:
-        lr *= 3.0
+        lr *= 4.0
     elif log_error_rate > 5:
-        lr *= 2.0
+        lr *= 2.5
+    elif log_error_rate > 0:
+        lr *= 1.5
 
     # Node pressure
     if node_mem_pressure:

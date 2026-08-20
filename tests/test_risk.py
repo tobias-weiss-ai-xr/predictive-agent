@@ -86,3 +86,51 @@ def test_risk_calculation_markov_impact():
     risk_healthy = calculate_risk(base_metrics, "HEALTHY", 0.0, 0.0)
     risk_critical = calculate_risk(base_metrics, "CRITICAL", 0.3, 0.1)
     assert risk_critical > risk_healthy
+
+
+def test_risk_single_restart_increases_risk():
+    """A single restart (rate=1) should increase risk via the >0 threshold."""
+    base = {
+        "memory_pct": 50.0,
+        "cpu_pct": 30.0,
+        "restart_rate_per_hr": 0.0,
+        "log_error_rate_per_min": 0.0,
+    }
+    no_restart = calculate_risk(base, "HEALTHY", 0.0, 0.0)
+    one_restart = calculate_risk(
+        {**base, "restart_rate_per_hr": 1.0}, "HEALTHY", 0.0, 0.0
+    )
+    assert one_restart > no_restart
+
+
+def test_risk_log_errors_any_increase():
+    """Any log errors should increase risk (>0 threshold)."""
+    base = {
+        "memory_pct": 50.0,
+        "cpu_pct": 30.0,
+        "restart_rate_per_hr": 0.0,
+        "log_error_rate_per_min": 0.0,
+    }
+    no_errors = calculate_risk(base, "HEALTHY", 0.0, 0.0)
+    some_errors = calculate_risk(
+        {**base, "log_error_rate_per_min": 1.0}, "HEALTHY", 0.0, 0.0
+    )
+    assert some_errors > no_errors
+
+
+def test_risk_prior_is_0_02():
+    """Base rate (no signals) should produce risk around 0.02."""
+    risk = calculate_risk({}, "HEALTHY", 0.0, 0.0)
+    assert 0.015 <= risk <= 0.025
+
+
+def test_risk_stressed_with_restart_crosses_threshold():
+    """High memory + restart + STRESSED state should cross 0.5 threshold."""
+    metrics = {
+        "memory_pct": 90.0,
+        "cpu_pct": 50.0,
+        "restart_rate_per_hr": 2.0,
+        "log_error_rate_per_min": 0.0,
+    }
+    risk = calculate_risk(metrics, "STRESSED", 0.1, 0.0)
+    assert risk > 0.5
