@@ -496,6 +496,7 @@ def _start_http_server() -> Any:
         history=_history,
         remediation_manager=_remediation_manager,
         notifier=_notifier,
+        backtester=_backtester,
     )
 
 

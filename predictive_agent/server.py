@@ -35,6 +35,7 @@ class _ServerState:
         "start_time",
         "remediation_manager",
         "notifier",
+        "backtester",
         # Reconcile stats (updated by main.py reconcile loop)
         "reconcile_count",
         "reconcile_duration",
@@ -53,6 +54,7 @@ class _ServerState:
         self.start_time = time.time()
         self.remediation_manager = None
         self.notifier = None
+        self.backtester = None
         self.reconcile_count = 0
         self.reconcile_duration = 0.0
         self.at_risk_count = 0
@@ -431,12 +433,10 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def _backtest_get(self):
         """GET /backtest — return prediction accuracy evaluation report."""
-        # Try to get backtester from main module context
+        bt = _context.backtester
+        if bt is None:
+            return {"status": "disabled", "message": "Backtester not initialized"}
         try:
-            from predictive_agent import main as _main
-            bt = getattr(_main, "_backtester", None)
-            if bt is None:
-                return {"status": "disabled", "message": "Backtester not initialized"}
             report = bt.evaluate()
             return report.to_dict()
         except Exception as e:
@@ -459,7 +459,7 @@ class HTTPServer(BaseHTTPServer):
 
 def start_server(metrics_port, health_port, state_model=None, predictor=None,
                  cache=None, reconcile_callback=None, history=None,
-                 remediation_manager=None, notifier=None):
+                 remediation_manager=None, notifier=None, backtester=None):
     """Start the metrics/API and health HTTP servers.
 
     Args:
@@ -472,6 +472,7 @@ def start_server(metrics_port, health_port, state_model=None, predictor=None,
         history: Optional list of analysis-history entries for ``/history``.
         remediation_manager: Optional :class:`RemediationManager` for /remediate.
         notifier: Optional :class:`NotificationManager` for /notifications.
+        backtester: Optional :class:`Backtester` for /backtest.
 
     Returns:
         The metrics HTTPServer instance. Calling ``shutdown()`` on it stops
@@ -485,6 +486,7 @@ def start_server(metrics_port, health_port, state_model=None, predictor=None,
     _context.history = history if history is not None else []
     _context.remediation_manager = remediation_manager
     _context.notifier = notifier
+    _context.backtester = backtester
     _context.start_time = time.time()
 
     # Metrics and API server (use HTTPServer subclass with allow_reuse_address)
