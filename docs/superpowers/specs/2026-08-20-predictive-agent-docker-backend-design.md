@@ -1,7 +1,7 @@
 # Predictive-Agent Docker Backend — Design Spec
 
 **Date:** 2026-08-20
-**Repo:** `tobias-weiss-ai-xr/predictive-agent` (branch `docker`)
+**Repo:** `tobias-weiss-ai-xr/predictive-agent` (branch `nix`)
 **Status:** Approved design, awaiting implementation plan
 
 ## 1. Background & Problem
