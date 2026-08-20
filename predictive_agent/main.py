@@ -59,9 +59,13 @@ _cache: Dict[str, Any] = {}
 _history: list = []
 _reconcile_count = 0
 _last_reconcile_time: Optional[str] = None
+_last_reconcile_duration: float = 0.0
 _server = None  # HTTP server handle
 _remediation_manager: Optional[RemediationManager] = None
 _notifier: Optional[NotificationManager] = None
+_llm_calls = 0
+_llm_errors = 0
+_state_saves = 0
 
 
 def _now_iso() -> str:
@@ -142,11 +146,14 @@ def reconcile() -> Dict[str, Any]:
         Dict with keys: predictions, state, timestamp, pods_tracked,
         at_risk_count, reconcile_count.
     """
-    global _reconcile_count, _last_reconcile_time
+    global _reconcile_count, _last_reconcile_time, _last_reconcile_duration
 
     _reconcile_count += 1
     cycle = _reconcile_count
     logger.info("Reconcile #%d: starting", cycle)
+
+    import time as _time_mod
+    _reconcile_start = _time_mod.monotonic()
 
     # ─── Collect metrics ───────────────────────────────────────────────
     # Use short timeouts so a missing cluster doesn't block the loop.
@@ -311,6 +318,8 @@ def reconcile() -> Dict[str, Any]:
     if _state_store is not None:
         try:
             _state_store.save_markov(_state_model.markov)
+            global _state_saves
+            _state_saves += 1
             if _predictor is not None:
                 predictions_data = [
                     {
@@ -356,6 +365,19 @@ def reconcile() -> Dict[str, Any]:
         logger.warning("Reconcile #%d: %d pods at risk", cycle, at_risk_count)
     else:
         logger.info("Reconcile #%d: %d pods tracked, 0 at risk", cycle, pods_tracked)
+
+    # ─── Update server context for Prometheus metrics ─────────────────
+    _last_reconcile_duration = _time_mod.monotonic() - _reconcile_start
+    try:
+        from predictive_agent.server import _context as _server_context
+        _server_context.reconcile_count = cycle
+        _server_context.reconcile_duration = round(_last_reconcile_duration, 3)
+        _server_context.at_risk_count = at_risk_count
+        _server_context.llm_calls = _llm_calls
+        _server_context.llm_errors = _llm_errors
+        _server_context.state_saves = _state_saves
+    except Exception:
+        pass
 
     return result
 
