@@ -100,6 +100,16 @@ class DockerSocketClient:
             conn = self._get_connection()
             conn.timeout = timeout
             
+            # The server closes the connection after each response
+            # (Connection: close). http.client will then try to re-connect to
+            # the literal host string "unix", which fails with gaierror.
+            # Re-establish the unix socket whenever the previous one is gone.
+            if conn.sock is None or conn.sock.fileno() == -1:
+                conn.close()
+                self._connection = None
+                conn = self._get_connection()
+                conn.timeout = timeout
+            
             default_headers = {
                 "Host": "unix",
                 "Accept": "application/json",
@@ -212,24 +222,44 @@ class DockerCollector:
         return "default"
 
     def _get_container_name(self, container: Dict[str, Any]) -> str:
-        """Extract container name from container info.
-        
+        """Extract the stable service name from a container.
+
+        Compose containers are literally named ``{project}_{service}_{index}``
+        (e.g. ``monitoring_predictive-agent_1``); the index changes on every
+        recreate, so the state model must track the *service* name instead.
+        Prefer the ``com.docker.compose.service`` label, then derive it by
+        stripping the project prefix and numeric replica suffix.
+
         Args:
             container: Container dict from Docker API
-        
+
         Returns:
-            Container name string
+            Normalized service name string
         """
+        labels = container.get("Labels", {}) or {}
+        service = labels.get("com.docker.compose.service", "")
+        if service:
+            return service
+
         names = container.get("Names", [])
         if names:
             # Remove leading slash
-            return names[0].lstrip("/")
-        
+            name = names[0].lstrip("/")
+            # Strip "{project}_" prefix and "_{index}" suffix from compose names.
+            project = labels.get("com.docker.compose.project", "")
+            if project:
+                prefix = f"{project}_"
+                if name.startswith(prefix):
+                    name = name[len(prefix):]
+            if re.search(r"_\d+$", name):
+                name = re.sub(r"_\d+$", "", name)
+            return name
+
         # Fall back to ID (short form)
         container_id = container.get("Id", "")
         if container_id:
             return container_id[:12]
-        
+
         return "unknown"
 
     def _should_skip_namespace(self, namespace: str) -> bool:

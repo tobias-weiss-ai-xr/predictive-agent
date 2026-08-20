@@ -267,10 +267,21 @@ class ContainerRestartAction(RemediationAction):
                     names = container.get("Names", [])
                     # Container names have leading /, so we need to match
                     for name in names:
-                        # name is like "/project_container_1"
+                        # name is like "/project_service_1"
                         if name.startswith("/"):
                             name = name[1:]
+                        # Compose-style names are "{project}_{service}_{index}",
+                        # e.g. "monitoring_predictive-agent_1". Match if the
+                        # container name equals the target or references it as a
+                        # compose service token.
                         if name == target or name.endswith("/" + target):
+                            return container.get("Id", "")
+                        if target and (
+                            name.startswith(f"{namespace}_{target}_")
+                            or name.startswith(f"{namespace}-{target}-")
+                            or f"_{target}_" in name
+                            or f"-{target}-" in name
+                        ):
                             return container.get("Id", "")
         except Exception as e:
             logger.error("Failed to get container ID for %s: %s", target, e)
