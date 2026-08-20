@@ -289,28 +289,34 @@ class DockerCollector:
         host_info = self._get_host_info()
         
         # Get memory stats from Docker info
-        mem_total = host_info.get("MemTotal", 0)
-        mem_used = host_info.get("Containers", {}).get("Memory", {}).get("TotalRSS", 0)
+        mem_total = 0
+        if isinstance(host_info, dict):
+            mem_total = int(host_info.get("MemTotal", 0) or 0)
         
-        # Alternative: Docker info provides memory stats differently
-        # Try: DockerInfo.MemTotal and the used memory from containers
         if mem_total <= 0:
             return False
         
         # Docker info structure may vary; try different paths
         # In newer Docker: MemoryStats from /info
+        mem_used = 0
         container_stats = host_info.get("Containers", {})
         if isinstance(container_stats, dict):
             memory_stats = container_stats.get("Memory", {})
             if isinstance(memory_stats, dict):
-                mem_used = memory_stats.get("TotalRSS", 0)
+                mem_used = memory_stats.get("TotalRSS", 0) or mem_used
+                mem_used = memory_stats.get("Usage", 0) or mem_used
         
         # If we can't get used memory, check other indicators
         if mem_used <= 0:
             # Try DockerInfo.ContainerStats if available
             cont_stats = host_info.get("ContainerStats", {})
             if isinstance(cont_stats, dict):
-                mem_used = cont_stats.get("MemoryTotal", 0)
+                mem_used = cont_stats.get("MemoryTotal", 0) or mem_used
+        
+        # Fall back to host /proc/meminfo (visible from the agent container:
+        # memory values in /proc/meminfo are host-global, not cgroup-namespaced).
+        if mem_used <= 0:
+            mem_used = self._host_used_memory_bytes(mem_total)
         
         if mem_used <= 0:
             return False
@@ -319,6 +325,28 @@ class DockerCollector:
         usage_ratio = mem_used / mem_total if mem_total > 0 else 0
         
         return usage_ratio > config.DOCKER_HOST_PRESSURE_THRESHOLD
+
+    def _host_used_memory_bytes(self, mem_total: int) -> int:
+        """Return used host memory in bytes from /proc/meminfo.
+
+        The agent runs on the Docker host, so /proc/meminfo reflects the host
+        (kernel memory files are host-wide; they are not namespaced per cgroup).
+        Returns 0 when the file cannot be read.
+        """
+        try:
+            mem_available = 0
+            with open("/proc/meminfo", "r", encoding="utf-8") as fh:
+                for line in fh:
+                    if line.startswith("MemAvailable:"):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            mem_available = int(parts[1]) * 1024
+                        break
+            if mem_available and mem_total > mem_available:
+                return mem_total - mem_available
+        except OSError:
+            pass
+        return 0
 
     def list_containers(self) -> list:
         """List all containers from Docker API.
