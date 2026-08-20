@@ -58,6 +58,11 @@ METRICS_PORT = int(
     os.environ.get("OPERATOR_METRICS_BIND_ADDRESS", "0.0.0.0:8080").split(":")[-1]
 )
 
+# ─── Collector Mode (Docker backend support) ────────────────────────────────
+COLLECTOR_MODE = os.environ.get("COLLECTOR_MODE", "kubectl")  # kubectl, docker
+DOCKER_SOCKET = os.environ.get("DOCKER_SOCKET", "/var/run/docker.sock")
+DOCKER_HOST_PRESSURE_THRESHOLD = float(os.environ.get("DOCKER_HOST_PRESSURE_THRESHOLD", "0.9"))
+
 # ─── Unhealthy pod statuses ──────────────────────────────────────────────────
 UNHEALTHY_STATUSES = {
     "CrashLoopBackOff", "Error", "OOMKilled", "ImagePullBackOff", "ErrImagePull",
