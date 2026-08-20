@@ -259,7 +259,15 @@ def reconcile() -> Dict[str, Any]:
                 markov_p_critical = transitions.get("CRITICAL", 0.0)
                 markov_p_failed = transitions.get("FAILED", 0.0)
 
-            restart_rate = restart_count  # Simplified: restarts per cycle
+            # Calculate restart rate per hour from pod age (not raw count)
+            ct = pod.get("metadata", {}).get("creationTimestamp", "")
+            if ct:
+                pod_age_s = (datetime.now(timezone.utc) - datetime.fromisoformat(
+                    ct.replace("Z", "+00:00")
+                )).total_seconds()
+            else:
+                pod_age_s = 3600
+            restart_rate = restart_count / max(pod_age_s / 3600, 1.0)  # restarts per hour
             log_error_rate = log_errors / 60.0  # Approximate per-minute rate
 
             # Query knowledge graph for blast radius (0 if KG unavailable)

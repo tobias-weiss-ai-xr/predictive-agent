@@ -44,7 +44,7 @@ spec:
 
       containers:
         - name: operator
-          image: 172.25.24.36:5001/predictive-agent:v8.5-nix
+          image: 172.25.24.36:5001/predictive-agent:v8.6-nix
           imagePullPolicy: Always
 
           securityContext:

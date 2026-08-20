@@ -1,6 +1,7 @@
 """Pod state tracking with Kalman filters and state classification."""
 
 import os
+from datetime import datetime, timezone
 
 from predictive_agent.kalman import KalmanTrend
 from predictive_agent.markov import MarkovChain
@@ -121,10 +122,13 @@ class PodTracker:
         self.node_pressure = False
         self.memory_anomaly_score = 0.0
         self.cpu_anomaly_score = 0.0
+        self._created_at = None  # set on first update
         self._timestamps = []
 
     def update(self, memory_mib, memory_limit_mib, cpu_m, restart_count, log_errors, node_pressure):
         """Update pod metrics and Kalman filters."""
+        if self._created_at is None:
+            self._created_at = datetime.now(timezone.utc)
         self.memory_mib = memory_mib
         self.memory_limit_mib = memory_limit_mib
         self.cpu_m = cpu_m
@@ -150,11 +154,15 @@ class PodTracker:
         self.cpu_pct = (cpu_m / 1000) * 100
 
         # Classify state
+        # Calculate restart rate per hour from pod age
+        age_s = (datetime.now(timezone.utc) - self._created_at).total_seconds() if self._created_at else 3600
+        restart_rate = restart_count / max(age_s / 3600, 1.0)  # restarts per hour
+
         self.prev_state = self.state
         self.state = classify_state(
             memory_pct=self.memory_pct,
             cpu_pct=self.cpu_pct,
-            restart_rate=restart_count,  # Simplified: use count as rate proxy
+            restart_rate=restart_rate,  # per hour, not raw count
             log_errors=log_errors,
             node_pressure=node_pressure,
             markov_state=self.state
@@ -251,6 +259,7 @@ class StateModel:
                 "node_pressure": pod.node_pressure,
                 "memory_anomaly_score": pod.memory_anomaly_score,
                 "cpu_anomaly_score": pod.cpu_anomaly_score,
+                "created_at": pod._created_at.isoformat() if pod._created_at else None,
             } for key, pod in self.pods.items()},
             "markov": self.markov.to_dict() if self.markov else None,
         }
@@ -273,6 +282,9 @@ class StateModel:
                 tracker.node_pressure = pod_data["node_pressure"]
                 tracker.memory_anomaly_score = pod_data.get("memory_anomaly_score", 0.0)
                 tracker.cpu_anomaly_score = pod_data.get("cpu_anomaly_score", 0.0)
+                created_at = pod_data.get("created_at")
+                if created_at:
+                    tracker._created_at = datetime.fromisoformat(created_at)
 
                 # Restore Kalman filters
                 tracker.kalman_memory.__dict__ = pod_data["kalman_memory"]
