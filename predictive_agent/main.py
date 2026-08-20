@@ -51,6 +51,16 @@ from predictive_agent.state_model import StateModel
 
 logger = logging.getLogger("predictive-agent")
 
+# Docker mode imports. Guarded so the kubectl-only image still imports and runs.
+_DOCKER_MODE = False
+if config.COLLECTOR_MODE == "docker":
+    try:
+        from predictive_agent.collector_docker import collect_docker_metrics
+        from predictive_agent.actions.container_restart import ContainerRestartAction
+        _DOCKER_MODE = True
+    except ImportError as e:
+        logger.warning("Docker mode requested but docker modules not available: %s", e)
+
 # ─── Global state (shared with server.py) ──────────────────────────────────
 _state_model: Optional[StateModel] = None
 _predictor: Optional[Predictor] = None
@@ -75,12 +85,14 @@ def _now_iso() -> str:
 
 def _kubectl_available() -> bool:
     """Check if kubectl binary is available and can connect to a cluster."""
+    if config.COLLECTOR_MODE == "docker":
+        return False
     rc, _, _ = run_cmd(["kubectl", "version", "--client"], timeout=5)
     return rc == 0
 
 
 def _get_pods_json() -> dict:
-    """Fetch all pods across watched namespaces as JSON."""
+    """Fetch all pods across watched namespaces as JSON (kubectl mode)."""
     rc, stdout, _ = run_cmd(
         ["kubectl", "get", "pods", "-A", "-o", "json"], timeout=10
     )
@@ -90,6 +102,26 @@ def _get_pods_json() -> dict:
         return json.loads(stdout)
     except json.JSONDecodeError:
         return {"items": []}
+
+
+def _collect_docker_containers() -> list:
+    """Collect Docker container data when in docker mode.
+
+    Returns a list of normalized container records. The collector returns a
+    dict keyed by ``namespace/name``; we expose its values as the record list.
+    """
+    if not _DOCKER_MODE:
+        return []
+
+    try:
+        # Use docker collector to get container data normalized to pod-like structure
+        containers = collect_docker_metrics()
+        if isinstance(containers, dict):
+            return list(containers.values())
+        return list(containers)
+    except Exception as e:
+        logger.warning("Docker container collection failed: %s", e)
+        return []
 
 
 def _get_pod_restart_count(pod: dict) -> int:
@@ -141,6 +173,10 @@ def reconcile() -> Dict[str, Any]:
 
     Collects metrics, updates state model, generates predictions, persists
     state, and returns a summary dict.
+    
+    Branches on config.COLLECTOR_MODE:
+    - "kubectl": uses kubectl to collect metrics from Kubernetes cluster
+    - "docker": uses Docker socket to collect metrics from local containers
 
     Returns:
         Dict with keys: predictions, state, timestamp, pods_tracked,
@@ -150,35 +186,78 @@ def reconcile() -> Dict[str, Any]:
 
     _reconcile_count += 1
     cycle = _reconcile_count
-    logger.info("Reconcile #%d: starting", cycle)
+    logger.info("Reconcile #%d: starting (mode=%s)", cycle, config.COLLECTOR_MODE)
 
     import time as _time_mod
     _reconcile_start = _time_mod.monotonic()
 
-    # ─── Collect metrics ───────────────────────────────────────────────
-    # Use short timeouts so a missing cluster doesn't block the loop.
-    rc_pods, pods_output, _ = run_cmd(
-        ["kubectl", "top", "pods", "-A", "--no-headers"], timeout=10
-    )
-    pod_metrics = collect_top_metrics(pods_output) if rc_pods == 0 else {}
+    # ─── Collect metrics — branch on COLLECTOR_MODE ────────────────────
+    if config.COLLECTOR_MODE == "docker":
+        # Docker mode: collect from Docker Engine API. Each normalized record
+        # already carries all metrics; we only adapt it for the shared loop.
+        pod_metrics = {}
+        node_metrics = {}
+        node_conditions = {}
 
-    rc_nodes, nodes_output, _ = run_cmd(
-        ["kubectl", "top", "nodes", "--no-headers"], timeout=10
-    )
-    node_metrics = collect_top_nodes(nodes_output) if rc_nodes == 0 else {}
+        pod_items_raw = _collect_docker_containers()
+        # Adapt docker records so _get_pod_restart_count / _get_pod_memory_limit work.
+        pod_items = []
+        for container in pod_items_raw:
+            ns = container.get("namespace", "default")
+            name = container.get("name", "")
+            pod_items.append({
+                "metadata": {
+                    "namespace": ns,
+                    "name": name,
+                },
+                "status": {
+                    "phase": "Running",
+                    "containerStatuses": [{
+                        "restartCount": container.get("restart_count", 0),
+                        "ready": True,
+                    }],
+                },
+                "spec": {
+                    "nodeName": "docker-host",
+                },
+                "docker_container": container,
+            })
+        node_pressure = any(c.get("node_pressure", False) for c in pod_items_raw)
+        if node_pressure:
+            node_conditions = {
+                "docker-host": {
+                    "MemoryPressure": "True",
+                    "DiskPressure": "False",
+                }
+            }
+        
+    else:
+        # kubectl mode (default): collect from Kubernetes cluster
+        # Use short timeouts so a missing cluster doesn't block the loop.
+        rc_pods, pods_output, _ = run_cmd(
+            ["kubectl", "top", "pods", "-A", "--no-headers"], timeout=10
+        )
+        pod_metrics = collect_top_metrics(pods_output) if rc_pods == 0 else {}
 
-    pods_json = _get_pods_json()
-    pod_items = pods_json.get("items", [])
+        rc_nodes, nodes_output, _ = run_cmd(
+            ["kubectl", "top", "nodes", "--no-headers"], timeout=10
+        )
+        node_metrics = collect_top_nodes(nodes_output) if rc_nodes == 0 else {}
 
-    rc_nodes_json, nodes_json_output, _ = run_cmd(
-        ["kubectl", "get", "nodes", "-o", "json"], timeout=10
-    )
-    node_conditions = {}
-    if rc_nodes_json == 0 and nodes_json_output:
-        try:
-            node_conditions = get_node_conditions(json.loads(nodes_json_output))
-        except json.JSONDecodeError:
-            pass
+        pods_json = _get_pods_json()
+        pod_items = pods_json.get("items", [])
+
+    # Node conditions only come from kubectl (docker mode sets its own above).
+    if config.COLLECTOR_MODE != "docker":
+        rc_nodes_json, nodes_json_output, _ = run_cmd(
+            ["kubectl", "get", "nodes", "-o", "json"], timeout=10
+        )
+        node_conditions = {}
+        if rc_nodes_json == 0 and nodes_json_output:
+            try:
+                node_conditions = get_node_conditions(json.loads(nodes_json_output))
+            except json.JSONDecodeError:
+                pass
 
     # ─── Update state model ────────────────────────────────────────────
     if _state_model is None:
@@ -205,32 +284,47 @@ def reconcile() -> Dict[str, Any]:
         pod_key = f"{ns}/{name}"
         restart_count = _get_pod_restart_count(pod)
 
-        # Get metrics from kubectl top
-        metrics = pod_metrics.get(pod_key, {})
-        cpu_m = metrics.get("cpu_m", 0)
-        memory_mib = metrics.get("memory_mib", 0)
+        # Get metrics - different source per mode
+        if config.COLLECTOR_MODE == "docker":
+            # Docker mode: get metrics from docker_container data
+            docker_container = pod.get("docker_container", {})
+            cpu_m = docker_container.get("cpu_m", 0)
+            memory_mib = docker_container.get("memory_mib", 0)
+            memory_limit_mib = docker_container.get("memory_limit_mib", 0)
 
-        # Get memory limit from pod spec
-        memory_limit_mib = _get_pod_memory_limit(pod)
+            # Get node pressure from Docker
+            mem_pressure = bool(docker_container.get("node_pressure", False))
+            _disk_pressure = False
 
-        # Get node pressure
-        node_name = pod.get("spec", {}).get("nodeName", "")
-        mem_pressure, _disk_pressure = _get_node_pressure(node_conditions, node_name)
+            # Log errors are pre-counted by the docker collector
+            log_errors = docker_container.get("log_errors", 0)
+        else:
+            # kubectl mode: get metrics from kubectl top
+            metrics = pod_metrics.get(pod_key, {})
+            cpu_m = metrics.get("cpu_m", 0)
+            memory_mib = metrics.get("memory_mib", 0)
 
-        # Collect log errors (skip for certain statuses to save API calls)
-        pod_phase = pod.get("status", {}).get("phase", "")
-        log_errors = 0
-        if pod_phase not in config.SKIP_LOGS_STATUSES:
-            container_statuses = pod.get("status", {}).get("containerStatuses", [])
-            for cs in container_statuses:
-                if cs.get("ready", False) is False or cs.get("restartCount", 0) > 0:
-                    rc_logs, logs_output, _ = run_cmd(
-                        ["kubectl", "logs", "-n", ns, name, "--tail=50"],
-                        timeout=5,
-                    )
-                    if rc_logs == 0:
-                        log_errors = count_log_errors(logs_output)
-                    break
+            # Get memory limit from pod spec
+            memory_limit_mib = _get_pod_memory_limit(pod)
+
+            # Get node pressure
+            node_name = pod.get("spec", {}).get("nodeName", "")
+            mem_pressure, _disk_pressure = _get_node_pressure(node_conditions, node_name)
+
+            # Collect log errors (skip for certain statuses to save API calls)
+            pod_phase = pod.get("status", {}).get("phase", "")
+            log_errors = 0
+            if pod_phase not in config.SKIP_LOGS_STATUSES:
+                container_statuses = pod.get("status", {}).get("containerStatuses", [])
+                for cs in container_statuses:
+                    if cs.get("ready", False) is False or cs.get("restartCount", 0) > 0:
+                        rc_logs, logs_output, _ = run_cmd(
+                            ["kubectl", "logs", "-n", ns, name, "--tail=50"],
+                            timeout=5,
+                        )
+                        if rc_logs == 0:
+                            log_errors = count_log_errors(logs_output)
+                        break
 
         # Update state model
         tracker = _state_model.update_pod(
@@ -478,20 +572,33 @@ def main() -> None:
     except Exception as e:
         logger.warning("Could not load Markov state: %s", e)
 
-    # ─── Initialize remediation (REM-8) ───────────────────────────────
+    # ─── Initialize remediation (REM-8) — branch on COLLECTOR_MODE ──────
     _remediation_manager = create_remediation_manager_from_config()
-    _remediation_manager.register_action(PodRestartAction())
-    _remediation_manager.register_action(NodeCordonAction())
-    _remediation_manager.register_action(RightSizeAction())
-    _remediation_manager.register_action(RolloutRestartAction())
-    _remediation_manager.register_action(DeploymentScaleAction())
-    _remediation_manager.register_action(ResourceTunerAction())
-    logger.info(
-        "Remediation initialized: dry_run=%s, threshold=%.1f, actions=%s",
-        _remediation_manager.dry_run,
-        _remediation_manager.risk_threshold,
-        _remediation_manager.get_stats()["registered_actions"],
-    )
+    
+    # Register actions based on collector mode
+    if config.COLLECTOR_MODE == "docker":
+        # Docker mode: only register container-specific actions
+        _remediation_manager.register_action(ContainerRestartAction())
+        logger.info(
+            "Remediation initialized (docker mode): dry_run=%s, threshold=%.1f, actions=%s",
+            _remediation_manager.dry_run,
+            _remediation_manager.risk_threshold,
+            _remediation_manager.get_stats()["registered_actions"],
+        )
+    else:
+        # kubectl mode (default): register all Kubernetes actions
+        _remediation_manager.register_action(PodRestartAction())
+        _remediation_manager.register_action(NodeCordonAction())
+        _remediation_manager.register_action(RightSizeAction())
+        _remediation_manager.register_action(RolloutRestartAction())
+        _remediation_manager.register_action(DeploymentScaleAction())
+        _remediation_manager.register_action(ResourceTunerAction())
+        logger.info(
+            "Remediation initialized (kubectl mode): dry_run=%s, threshold=%.1f, actions=%s",
+            _remediation_manager.dry_run,
+            _remediation_manager.risk_threshold,
+            _remediation_manager.get_stats()["registered_actions"],
+        )
 
     # ─── Initialize notifications (REM-6) ──────────────────────────────
     _notifier = create_notifier_from_config()
