@@ -284,7 +284,11 @@ class StateModel:
                 tracker.cpu_anomaly_score = pod_data.get("cpu_anomaly_score", 0.0)
                 created_at = pod_data.get("created_at")
                 if created_at:
-                    tracker._created_at = datetime.fromisoformat(created_at)
+                    try:
+                        tracker._created_at = datetime.fromisoformat(created_at)
+                    except ValueError:
+                        # Unparseable timestamp → leave None (age defaults to 3600s)
+                        tracker._created_at = None
 
                 # Restore Kalman filters
                 tracker.kalman_memory.__dict__ = pod_data["kalman_memory"]

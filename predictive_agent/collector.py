@@ -3,12 +3,43 @@
 import json
 import re
 import subprocess
+from datetime import datetime, timezone
 
 # Pre-compiled regex for error detection (much faster than 10 separate re.search calls)
 _ERROR_RE = re.compile(
     r"\b(?:ERROR|Error|FATAL|PANIC|OOM|CrashLoopBackOff|Exception|Traceback)\b"
     r"|\bpanic:|\bfatal:"
 )
+
+
+def _normalize_created_at(value):
+    """Normalize a docker/k8s creation timestamp to an ISO 8601 UTC string.
+
+    Accepts python isoformat ('2026-08-21T23:03:39+00:00'), RFC3339 ending in
+    'Z' ('2026-08-21T23:03:39Z'), and the Go time.String() format emitted by
+    'docker ps' CreatedAt ('2026-08-21 23:03:39 +0200 CEST'). Returns '' if the
+    value cannot be parsed so callers never crash on a malformed timestamp.
+    """
+    if not value:
+        return ""
+    v = str(value).strip()
+    if v.endswith("Z"):
+        v = v[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(v).astimezone(timezone.utc).isoformat()
+    except ValueError:
+        pass
+    # Go time.String(): "2026-08-21 23:03:39 +0200 CEST"
+    try:
+        parts = v.split()
+        if len(parts) >= 3 and parts[0].count("-") == 2 and parts[2][0] in "+-0123456789":
+            dt = datetime.strptime(
+                f"{parts[0]} {parts[1]} {parts[2]}", "%Y-%m-%d %H:%M:%S %z"
+            )
+            return dt.astimezone(timezone.utc).isoformat()
+    except (ValueError, IndexError):
+        pass
+    return ""
 
 
 def run_cmd(cmd, timeout=30):
@@ -622,7 +653,9 @@ def discover_docker_containers():
             "compose_project": compose_project,
             "ports": ports,
             "networks": networks,
-            "created_at": container_ps.get("CreatedAt", "") or state.get("StartedAt", ""),
+            "created_at": _normalize_created_at(
+                container_ps.get("CreatedAt", "") or state.get("StartedAt", "")
+            ),
             "healthy": healthy,
             "exit_code": state.get("ExitCode"),
             "restart_count": state.get("RestartCount", 0),

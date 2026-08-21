@@ -57,8 +57,10 @@ class TestRemediationIntegration:
         rem_mgr.register_action(PodRestartAction())
         fresh_state._remediation_manager = rem_mgr
 
-        # Mock kubectl to return no pods
-        with patch("predictive_agent.main.run_cmd") as mock_run:
+        # Force Kubernetes runtime so Docker discovery (which depends on the
+        # test host's Docker daemon) does not inject real local containers.
+        with patch("predictive_agent.main.detect_runtime", return_value="kubernetes"), \
+                patch("predictive_agent.main.run_cmd") as mock_run:
             mock_run.return_value = (1, "", "")  # kubectl not available
             result = reconcile()
 

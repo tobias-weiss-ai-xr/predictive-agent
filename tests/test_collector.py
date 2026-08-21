@@ -13,7 +13,25 @@ from predictive_agent.collector import (
     parse_watch_names,
     detect_runtime,
     get_watch_selectors,
+    _normalize_created_at,
 )
+
+
+def test_normalize_created_at():
+    """Created-at timestamps from docker/k8s must normalize to ISO 8601 UTC."""
+    # Go time.String() format emitted by 'docker ps' CreatedAt
+    assert _normalize_created_at("2026-08-21 23:03:39 +0200 CEST") == \
+        "2026-08-21T21:03:39+00:00"
+    # RFC3339 with Z
+    assert _normalize_created_at("2026-08-21T21:03:39Z") == \
+        "2026-08-21T21:03:39+00:00"
+    # Already ISO 8601 UTC
+    assert _normalize_created_at("2026-08-21T21:03:39+00:00") == \
+        "2026-08-21T21:03:39+00:00"
+    # Empty / garbage must not crash
+    assert _normalize_created_at("") == ""
+    assert _normalize_created_at(None) == ""
+    assert _normalize_created_at("not-a-date") == ""
 
 
 def test_parse_cpu():

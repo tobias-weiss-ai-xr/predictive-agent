@@ -508,9 +508,12 @@ def reconcile() -> Dict[str, Any]:
             # Calculate restart rate per hour from pod age (not raw count)
             ct = pod.get("metadata", {}).get("creationTimestamp", "")
             if ct:
-                pod_age_s = (datetime.now(timezone.utc) - datetime.fromisoformat(
-                    ct.replace("Z", "+00:00")
-                )).total_seconds()
+                try:
+                    pod_age_s = (datetime.now(timezone.utc) - datetime.fromisoformat(
+                        ct.replace("Z", "+00:00")
+                    )).total_seconds()
+                except ValueError:
+                    pod_age_s = 3600
             else:
                 pod_age_s = 3600
             restart_rate = restart_count / max(pod_age_s / 3600, 1.0)  # restarts per hour

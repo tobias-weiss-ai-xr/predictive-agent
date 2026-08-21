@@ -12,7 +12,7 @@ import json
 import threading
 import time
 from dataclasses import asdict, is_dataclass
-from http.server import HTTPServer as BaseHTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer as BaseHTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from predictive_agent import config
 
@@ -448,10 +448,12 @@ class RequestHandler(BaseHTTPRequestHandler):
 
 
 # ─── Server wrapper ──────────────────────────────────────────────────────────
-class HTTPServer(BaseHTTPServer):
-    """Wrapper for the HTTP server to allow easier shutdown in tests."""
+class HTTPServer(ThreadingHTTPServer):
+    """Threaded wrapper for the HTTP server to allow easier shutdown in tests."""
 
     allow_reuse_address = True
+    daemon_threads = True
+    request_queue_size = 128
 
     def shutdown_server(self):
         self.shutdown()
