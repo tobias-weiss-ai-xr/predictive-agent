@@ -55,6 +55,7 @@ pkgs.dockerTools.buildLayeredImage {
     curl
     bash
     kubectl
+    docker-client   # needed for Docker-native discovery (docker ps / docker inspect)
     coreutils
     gnugrep
     gnused
@@ -98,7 +99,7 @@ pkgs.dockerTools.buildLayeredImage {
       "WEBHOOK_TIMEOUT=10"
       "PYTHONPATH=/opt/predictive-agent"
       "PREDICTION_BASE_RISK=0.15"
-      "PATH=${pkgs.python3}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin:${pkgs.gnused}/bin:${pkgs.procps}/bin:${pkgs.kubectl}/bin"
+      "PATH=${pkgs.python3}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:${pkgs.docker-client}/bin:${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin:${pkgs.gnused}/bin:${pkgs.procps}/bin:${pkgs.kubectl}/bin"
       "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
       "HOME=/home/opendesk"
     ];
