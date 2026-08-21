@@ -1,0 +1,30 @@
+galaxy_info:
+  role_name: monitoring_agents
+  author: openDesk Team
+  description: Deploy Docker-based monitoring containers with predictive-agent
+  license: MIT
+  min_ansible_version: "2.10"
+  
+  platforms:
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+  
+  galaxy_tags:
+    - docker
+    - monitoring
+    - kubernetes
+    - predictive
+    - health
+
+dependencies: []

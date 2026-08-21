@@ -1,6 +1,6 @@
-"""Test pod status signal collection from collector.get_pod_status_signals."""
+"""Test pod status signal collection from collector.get_pod_status_signals and Docker container signals."""
 import pytest
-from predictive_agent.collector import get_pod_status_signals
+from predictive_agent.collector import get_pod_status_signals, get_container_status_signals
 
 
 def _make_pod(phase="Running", container_ready=True, wait_state=None,
@@ -164,3 +164,143 @@ class TestGetPodStatusSignals:
         assert signals["wait_state"] is None
         assert signals["terminated"] is False
         assert signals["restart_count"] == 0
+
+
+# =============================================================================
+# Docker container status signals tests
+# =============================================================================
+
+
+def _make_container(running=True, restarting=False, dead=False, oom_killed=False,
+                     restart_count=0, exit_code=None, health_status=None, paused=False):
+    """Build a minimal Docker inspect JSON object for testing."""
+    state = {
+        "Running": running,
+        "Paused": paused,
+        "Restarting": restarting,
+        "Dead": dead,
+        "OOMKilled": oom_killed,
+        "RestartCount": restart_count,
+    }
+    if exit_code is not None:
+        state["ExitCode"] = exit_code
+    
+    if health_status:
+        state["Health"] = {"Status": health_status}
+    
+    return {
+        "Id": "abc123",
+        "Name": "/test-container",
+        "State": state,
+        "Config": {"Image": "test:latest"},
+    }
+
+
+class TestGetContainerStatusSignals:
+    """Test get_container_status_signals function for Docker containers."""
+
+    def test_running_healthy_container(self):
+        """A running healthy container should return ready=True, no issues."""
+        container = _make_container(running=True, health_status="healthy")
+        signals = get_container_status_signals(container)
+        assert signals["wait_state"] is None
+        assert signals["terminated"] is False
+        assert signals["restart_count"] == 0
+        assert signals["ready"] is True
+
+    def test_running_no_health_container(self):
+        """A running container without health checks should be ready."""
+        container = _make_container(running=True, health_status=None)
+        signals = get_container_status_signals(container)
+        assert signals["ready"] is True
+        assert signals["terminated"] is False
+
+    def test_running_unhealthy_container(self):
+        """A running but unhealthy container should not be ready."""
+        container = _make_container(running=True, health_status="unhealthy")
+        signals = get_container_status_signals(container)
+        assert signals["ready"] is False
+        assert signals["wait_state"] is None
+        assert signals["terminated"] is False
+
+    def test_restarting_container(self):
+        """A restarting container should have wait_state=Restarting."""
+        container = _make_container(running=False, restarting=True, restart_count=5)
+        signals = get_container_status_signals(container)
+        assert signals["wait_state"] == "Restarting"
+        assert signals["terminated"] is True
+        assert signals["restart_count"] == 5
+        assert signals["ready"] is False
+
+    def test_restart_loop_scenario(self):
+        """Container in restart loop should show Restarting wait_state and incremented restart_count."""
+        container = _make_container(running=False, restarting=True, restart_count=10)
+        signals = get_container_status_signals(container)
+        assert signals["wait_state"] == "Restarting"
+        assert signals["restart_count"] == 10
+        assert signals["terminated"] is True
+        assert signals["ready"] is False
+
+    def test_dead_container(self):
+        """A dead container should have wait_state=Dead and terminated=True."""
+        container = _make_container(running=False, dead=True, restart_count=0)
+        signals = get_container_status_signals(container)
+        assert signals["wait_state"] == "Dead"
+        assert signals["terminated"] is True
+        assert signals["ready"] is False
+
+    def test_oom_killed_container(self):
+        """An OOM-killed container should have wait_state=OOMKilled and terminated=True."""
+        container = _make_container(running=False, oom_killed=True, restart_count=0)
+        signals = get_container_status_signals(container)
+        assert signals["wait_state"] == "OOMKilled"
+        assert signals["terminated"] is True
+        assert signals["ready"] is False
+
+    def test_exited_container(self):
+        """An exited container should have wait_state=Exited and terminated=True."""
+        container = _make_container(running=False, exit_code=0, restart_count=0)
+        signals = get_container_status_signals(container)
+        assert signals["wait_state"] == "Exited"
+        assert signals["terminated"] is True
+        assert signals["ready"] is False
+
+    def test_exited_with_error_code(self):
+        """Container exited with non-zero code should show exit code in wait_state."""
+        container = _make_container(running=False, exit_code=137, restart_count=0)
+        signals = get_container_status_signals(container)
+        assert signals["wait_state"] == "Exited (137)"
+        assert signals["terminated"] is True
+        assert signals["ready"] is False
+
+    def test_paused_container(self):
+        """A paused container is not ready but not terminated."""
+        container = _make_container(running=True, paused=True, restart_count=0)
+        signals = get_container_status_signals(container)
+        assert signals["wait_state"] is None
+        assert signals["terminated"] is False
+        assert signals["ready"] is False
+
+    def test_restart_count(self):
+        """Restart count should be extracted from container state."""
+        container = _make_container(running=True, restart_count=7)
+        signals = get_container_status_signals(container)
+        assert signals["restart_count"] == 7
+
+    def test_empty_container(self):
+        """Empty container JSON should return safe defaults."""
+        container = {"State": {}}
+        signals = get_container_status_signals(container)
+        assert signals["wait_state"] is None
+        assert signals["terminated"] is True  # Not running
+        assert signals["restart_count"] == 0
+        assert signals["ready"] is False
+
+    def test_starting_container(self):
+        """A container in Created/starting state (not yet running) should not be ready."""
+        container = _make_container(running=False, restarting=False, dead=False,
+                                     restart_count=0, exit_code=None)
+        signals = get_container_status_signals(container)
+        assert signals["wait_state"] is None
+        assert signals["terminated"] is True
+        assert signals["ready"] is False

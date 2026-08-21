@@ -151,7 +151,8 @@ class TestReconcileIntegration:
                 os.path.join(tmpdir, "pred.json"),
             )
 
-            with patch("predictive_agent.main.collect_top_metrics", return_value=mock_kubectl_metrics), \
+            with patch("predictive_agent.main.detect_runtime", return_value="kubernetes"), \
+                 patch("predictive_agent.main.collect_top_metrics", return_value=mock_kubectl_metrics), \
                  patch("predictive_agent.main.collect_top_nodes", return_value=mock_kubectl_nodes), \
                  patch("predictive_agent.main.get_pod_resources", return_value={}), \
                  patch("predictive_agent.main.get_node_conditions", return_value={}), \
@@ -180,7 +181,8 @@ class TestReconcileIntegration:
                 os.path.join(tmpdir, "pred.json"),
             )
 
-            with patch("predictive_agent.main.collect_top_metrics", return_value=mock_kubectl_metrics), \
+            with patch("predictive_agent.main.detect_runtime", return_value="kubernetes"), \
+                 patch("predictive_agent.main.collect_top_metrics", return_value=mock_kubectl_metrics), \
                  patch("predictive_agent.main.collect_top_nodes", return_value=mock_kubectl_nodes), \
                  patch("predictive_agent.main.get_pod_resources", return_value={}), \
                  patch("predictive_agent.main.get_node_conditions", return_value={}), \
@@ -207,7 +209,8 @@ class TestReconcileIntegration:
             pred_file = os.path.join(tmpdir, "pred.json")
             main_mod._state_store = StateStore(sm_file, pred_file)
 
-            with patch("predictive_agent.main.collect_top_metrics", return_value=mock_kubectl_metrics), \
+            with patch("predictive_agent.main.detect_runtime", return_value="kubernetes"), \
+                 patch("predictive_agent.main.collect_top_metrics", return_value=mock_kubectl_metrics), \
                  patch("predictive_agent.main.collect_top_nodes", return_value=mock_kubectl_nodes), \
                  patch("predictive_agent.main.get_pod_resources", return_value={}), \
                  patch("predictive_agent.main.get_node_conditions", return_value={}), \
@@ -397,3 +400,126 @@ class TestStatePersistenceIntegration:
         assert pt.kalman_memory.velocity > 0
         # Level should be close to the last value
         assert abs(pt.kalman_memory.level - 150) < 20
+
+
+# ─── Docker Container Lifecycle Tests ───────────────────────────────────────
+
+class TestDockerContainerLifecycle:
+    """Tests for Docker container lifecycle management in the risk pipeline."""
+
+    def test_state_model_finalize_pod_basic(self):
+        """Test that removing a pod from state model works."""
+        from predictive_agent.state_model import StateModel
+        sm = StateModel()
+        
+        # Add a pod
+        sm.update_pod("docker", "web-1", memory_mib=500, memory_limit_mib=1024,
+                       cpu_m=100, restart_count=0, log_errors=0, node_pressure=False)
+        assert "docker/web-1" in sm.pods
+        
+        # Remove it (simulating finalization)
+        tracker = sm.pods.get("docker/web-1")
+        if tracker and tracker.state != "FAILED":
+            sm.markov.record_transition(tracker.state, "FAILED")
+        del sm.pods["docker/web-1"]
+        
+        assert "docker/web-1" not in sm.pods
+
+    def test_state_model_finalize_pod_not_found(self):
+        """Test that removing non-existent pod is safe."""
+        from predictive_agent.state_model import StateModel
+        sm = StateModel()
+        
+        # Try to remove non-existent pod
+        pod_key = "docker/nonexistent"
+        if pod_key in sm.pods:
+            del sm.pods[pod_key]
+        
+        # Should not raise any error
+        assert "docker/nonexistent" not in sm.pods
+
+    def test_state_model_finalize_pod_records_transition(self):
+        """Test that removing a pod records transition to FAILED if not already FAILED."""
+        from predictive_agent.state_model import StateModel
+        sm = StateModel()
+        
+        # Add a healthy pod
+        sm.update_pod("docker", "web-1", memory_mib=500, memory_limit_mib=1024,
+                       cpu_m=100, restart_count=0, log_errors=0, node_pressure=False)
+        initial_transitions = sm.markov.total_transitions
+        
+        # Remove it with transition
+        tracker = sm.pods.get("docker/web-1")
+        if tracker and tracker.state != "FAILED":
+            sm.markov.record_transition(tracker.state, "FAILED")
+        del sm.pods["docker/web-1"]
+        
+        # Check that transition was recorded
+        assert sm.markov.total_transitions >= initial_transitions + 1
+
+    def test_state_model_finalize_pod_already_failed(self):
+        """Test that removing an already FAILED pod doesn't double-record transition."""
+        from predictive_agent.state_model import StateModel
+        sm = StateModel()
+        
+        # Add a pod and manually set to FAILED
+        tracker = sm.track_pod("docker", "web-1")
+        tracker.state = "FAILED"
+        tracker.prev_state = "HEALTHY"
+        sm.markov.record_transition("HEALTHY", "FAILED")
+        initial_transitions = sm.markov.total_transitions
+        
+        # Remove it
+        tracker = sm.pods.get("docker/web-1")
+        if tracker and tracker.state != "FAILED":
+            sm.markov.record_transition(tracker.state, "FAILED")
+        del sm.pods["docker/web-1"]
+        
+        # Should not have added a new transition
+        # (since it was already FAILED, no new transition is recorded)
+        assert sm.markov.total_transitions == initial_transitions
+
+    def test_reconcile_docker_lifecycle(self):
+        """Test that reconcile handles Docker container lifecycle (add and remove)."""
+        from predictive_agent.main import reconcile
+        from predictive_agent.state_model import StateModel
+        from predictive_agent.predictor import Predictor
+        from predictive_agent.persistence import StateStore
+        import predictive_agent.main as main_mod
+        import tempfile
+        import os
+
+        # Initialize state
+        main_mod._state_model = StateModel()
+        main_mod._predictor = Predictor(risk_threshold=0.5)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            main_mod._state_store = StateStore(
+                os.path.join(tmpdir, "state.json"),
+                os.path.join(tmpdir, "pred.json"),
+            )
+
+            with patch("predictive_agent.main.detect_runtime", return_value="docker"):
+                with patch("predictive_agent.main.discover_docker_containers") as mock_discover, \
+                     patch("predictive_agent.main._collect_docker_container_metrics", return_value={}), \
+                     patch("predictive_agent.main.get_watch_selectors", return_value={"runtime": "docker"}), \
+                     patch("predictive_agent.main.run_cmd", return_value=(0, "", "")):
+                    
+                    # First reconcile: container exists
+                    mock_discover.return_value = {
+                        "abc123": {
+                            "name": "web-1",
+                            "compose_project": "myapp",
+                            "status": "running",
+                            "restart_count": 0,
+                            "healthy": True,
+                        }
+                    }
+                    reconcile()
+                    assert "myapp/web-1" in main_mod._state_model.pods
+                    
+                    # Second reconcile: container removed
+                    mock_discover.return_value = {}
+                    reconcile()
+                    
+                    # Container should be finalized and removed
+                    assert "myapp/web-1" not in main_mod._state_model.pods

@@ -39,9 +39,14 @@ from predictive_agent.collector import (
     collect_top_metrics,
     collect_top_nodes,
     count_log_errors,
+    detect_runtime,
+    discover_docker_containers,
+    get_container_status_signals,
     get_node_conditions,
     get_pod_resources,
     get_pod_status_signals,
+    get_watch_selectors,
+    parse_memory,
     run_cmd,
 )
 from predictive_agent.notifier import NotificationManager, create_notifier_from_config
@@ -141,11 +146,119 @@ def _get_node_pressure(node_conditions: dict, node_name: str) -> tuple[bool, boo
     return mem_pressure, disk_pressure
 
 
+def _matches_docker_selectors(container_info: dict, selectors: dict) -> bool:
+    """Check if a Docker container matches configured selectors.
+    
+    Args:
+        container_info: dict with container info from discover_docker_containers
+        selectors: dict from get_watch_selectors() with labels, compose_projects, names
+        
+    Returns:
+        bool: True if container matches all configured selectors
+    """
+    import fnmatch
+    
+    # No selectors means match all
+    if not selectors.get("labels") and not selectors.get("compose_projects") and not selectors.get("names"):
+        return True
+    
+    # Check label selectors
+    if selectors.get("labels"):
+        container_labels = container_info.get("labels", {})
+        for key, value in selectors["labels"].items():
+            if container_labels.get(key) != value:
+                return False
+    
+    # Check compose project selectors
+    if selectors.get("compose_projects"):
+        project = container_info.get("compose_project", "")
+        if project not in selectors["compose_projects"]:
+            return False
+    
+    # Check name patterns
+    if selectors.get("names"):
+        container_name = container_info.get("name", "")
+        matched = False
+        for pattern in selectors["names"]:
+            if fnmatch.fnmatch(container_name, pattern):
+                matched = True
+                break
+        if not matched:
+            return False
+    
+    return True
+
+
+def _collect_docker_container_metrics() -> dict:
+    """Collect Docker container metrics using docker stats.
+    
+    Returns:
+        dict: Container ID -> {cpu_m, memory_mib} mapping
+    """
+    metrics = {}
+    try:
+        # Use docker stats --no-stream --format to get current metrics
+        rc, stdout, _ = run_cmd(
+            ["docker", "stats", "--no-stream", "--format", "{{.Container}},{{.CPUPerc}},{{.MemUsage}}"],
+            timeout=10
+        )
+        if rc == 0 and stdout:
+            for line in stdout.strip().split("\n"):
+                if not line.strip():
+                    continue
+                parts = line.split(",")
+                if len(parts) >= 3:
+                    container_id = parts[0].strip()
+                    cpu_pct_str = parts[1].strip().rstrip("%")
+                    mem_usage_str = parts[2].strip()
+                    
+                    try:
+                        cpu_pct = float(cpu_pct_str)
+                        cpu_m = int(cpu_pct * 10)  # Convert % to millicores (assuming 100% = 1000m)
+                        
+                        # Parse memory usage like "50MiB / 1GiB"
+                        mem_usage = mem_usage_str.split("/")[0].strip()
+                        memory_mib = parse_memory(mem_usage)
+                        
+                        # Use short container ID as key
+                        short_id = container_id[:12] if len(container_id) > 12 else container_id
+                        metrics[short_id] = {
+                            "cpu_m": cpu_m,
+                            "memory_mib": memory_mib,
+                        }
+                    except (ValueError, IndexError):
+                        continue
+    except Exception as e:
+        logger.debug("Failed to collect Docker metrics: %s", e)
+    
+    return metrics
+
+
+def _get_container_memory_limit(inspect_info: dict) -> int:
+    """Extract memory limit from Docker inspect info in MiB."""
+    try:
+        # Check HostConfig.Memory (in bytes) first
+        memory_bytes = inspect_info.get("HostConfig", {}).get("Memory", 0)
+        if memory_bytes > 0:
+            return memory_bytes // (1024 * 1024)  # Convert to MiB
+        
+        # Fallback: check Config.Memory if it exists
+        memory_bytes = inspect_info.get("Config", {}).get("Memory", 0)
+        if memory_bytes > 0:
+            return memory_bytes // (1024 * 1024)
+        
+        return 0
+    except (TypeError, ValueError):
+        return 0
+
+
 def reconcile() -> Dict[str, Any]:
     """Run one reconcile cycle.
 
     Collects metrics, updates state model, generates predictions, persists
     state, and returns a summary dict.
+
+    Handles both Docker and Kubernetes runtimes based on configuration.
 
     Returns:
         Dict with keys: predictions, state, timestamp, pods_tracked,
@@ -160,30 +273,84 @@ def reconcile() -> Dict[str, Any]:
     import time as _time_mod
     _reconcile_start = _time_mod.monotonic()
 
-    # ─── Collect metrics ───────────────────────────────────────────────
-    # Use short timeouts so a missing cluster doesn't block the loop.
-    rc_pods, pods_output, _ = run_cmd(
-        ["kubectl", "top", "pods", "-A", "--no-headers"], timeout=10
-    )
-    pod_metrics = collect_top_metrics(pods_output) if rc_pods == 0 else {}
-
-    rc_nodes, nodes_output, _ = run_cmd(
-        ["kubectl", "top", "nodes", "--no-headers"], timeout=10
-    )
-    node_metrics = collect_top_nodes(nodes_output) if rc_nodes == 0 else {}
-
-    pods_json = _get_pods_json()
-    pod_items = pods_json.get("items", [])
-
-    rc_nodes_json, nodes_json_output, _ = run_cmd(
-        ["kubectl", "get", "nodes", "-o", "json"], timeout=10
-    )
+    # ─── Detect runtime and collect metrics ────────────────────────────
+    runtime = detect_runtime()
+    logger.debug("Reconcile #%d: runtime=%s", cycle, runtime)
+    
+    # Track currently seen containers/pods for cleanup
+    current_keys = set()
+    pod_metrics = {}
     node_conditions = {}
-    if rc_nodes_json == 0 and nodes_json_output:
-        try:
-            node_conditions = get_node_conditions(json.loads(nodes_json_output))
-        except json.JSONDecodeError:
-            pass
+    
+    if runtime == "docker":
+        # Docker mode: discover containers and their metrics
+        containers = discover_docker_containers()
+        docker_metrics = _collect_docker_container_metrics()
+        
+        pod_metrics = docker_metrics
+        # For Docker, node_conditions is not applicable
+        node_conditions = {}
+        
+        # Build list of container items with pod-like structure
+        pod_items = []
+        for container_id, info in containers.items():
+            # Create a pod-like dict for processing
+            # Use compose_project as namespace, or "docker" as default
+            ns = info.get("compose_project", "docker") or "docker"
+            name = info.get("name", container_id[:12])
+            pod_key = f"{ns}/{name}"
+            
+            pod_items.append({
+                "metadata": {
+                    "namespace": ns,
+                    "name": name,
+                    "creationTimestamp": info.get("created_at", ""),
+                },
+                "spec": {
+                    "nodeName": "docker-host",
+                },
+                "status": {
+                    "phase": "Running" if info.get("status") == "running" else "Succeeded" if info.get("status") == "exited" else "Unknown",
+                    "containerStatuses": [{
+                        "ready": info.get("healthy", True),
+                        "restartCount": info.get("restart_count", 0),
+                    }],
+                },
+                "_container_id": container_id,
+                "_docker_info": info,
+            })
+            current_keys.add(pod_key)
+    else:
+        # Kubernetes mode: use kubectl commands
+        rc_pods, pods_output, _ = run_cmd(
+            ["kubectl", "top", "pods", "-A", "--no-headers"], timeout=10
+        )
+        pod_metrics = collect_top_metrics(pods_output) if rc_pods == 0 else {}
+
+        rc_nodes, nodes_output, _ = run_cmd(
+            ["kubectl", "top", "nodes", "--no-headers"], timeout=10
+        )
+        node_metrics = collect_top_nodes(nodes_output) if rc_nodes == 0 else {}
+
+        pods_json = _get_pods_json()
+        
+        rc_nodes_json, nodes_json_output, _ = run_cmd(
+            ["kubectl", "get", "nodes", "-o", "json"], timeout=10
+        )
+        if rc_nodes_json == 0 and nodes_json_output:
+            try:
+                node_conditions = get_node_conditions(json.loads(nodes_json_output))
+            except json.JSONDecodeError:
+                pass
+        
+        pod_items = pods_json.get("items", [])
+        
+        # Track current pod keys for cleanup
+        for pod in pod_items:
+            ns = _get_pod_namespace(pod)
+            name = _get_pod_name(pod)
+            if not _should_skip_namespace(ns):
+                current_keys.add(f"{ns}/{name}")
 
     # ─── Update state model ────────────────────────────────────────────
     if _state_model is None:
@@ -197,54 +364,123 @@ def reconcile() -> Dict[str, Any]:
             "reconcile_count": cycle,
         }
 
+    # Finalize removed containers/pods
+    removed_keys = set(_state_model.pods.keys()) - current_keys
+    for pod_key in removed_keys:
+        # Parse pod_key to get namespace and name
+        parts = pod_key.split("/", 1)
+        if len(parts) == 2:
+            ns, name = parts
+            tracker = _state_model.pods.get(pod_key)
+            if tracker and tracker.state != "FAILED":
+                # Record final transition to FAILED
+                _state_model.markov.record_transition(tracker.state, "FAILED")
+            logger.info("Finalizing removed container/pod: %s", pod_key)
+            # Remove from state model
+            if pod_key in _state_model.pods:
+                del _state_model.pods[pod_key]
+
     pods_tracked = 0
     at_risk_count = 0
 
     for pod in pod_items:
-        ns = _get_pod_namespace(pod)
-        name = _get_pod_name(pod)
+        # Extract namespace and name (works for both K8s and Docker)
+        if runtime == "docker":
+            # Docker: use _docker_info
+            ns = pod.get("metadata", {}).get("namespace", "docker")
+            name = pod.get("metadata", {}).get("name", "")
+            container_id = pod.get("_container_id", "")
+            docker_info = pod.get("_docker_info", {})
+            
+            # For Docker, skip namespace filtering
+            # but respect watch selectors if configured
+            selectors = get_watch_selectors()
+            if selectors.get("runtime") == "docker":
+                # Check if container matches selectors
+                if not _matches_docker_selectors(docker_info, selectors):
+                    continue
+            
+            pod_key = f"{ns}/{name}"
+            
+            # Get restart count from Docker info
+            restart_count = docker_info.get("restart_count", 0)
+            
+            # Get metrics from docker stats (keyed by container id)
+            metrics = pod_metrics.get(container_id[:12], {})
+            cpu_m = metrics.get("cpu_m", 0)
+            memory_mib = metrics.get("memory_mib", 0)
+            
+            # Get memory limit from Docker inspect info
+            memory_limit_mib = _get_container_memory_limit(pod.get("_docker_info", {}))
+            
+            # Docker has no node pressure (single host)
+            mem_pressure = False
+            
+            # Get pod status signals from Docker info
+            status_signals = get_container_status_signals(pod.get("_docker_info", {}))
+            pod_phase = status_signals.get("pod_phase", "Running")
+            container_ready = status_signals.get("container_ready", True)
+            wait_state = status_signals.get("wait_state")
+            terminated = status_signals.get("terminated", False)
+            terminated_reason = status_signals.get("terminated_reason")
+            pod_scheduled = True  # Docker containers are always scheduled
+            
+            # Collect log errors from Docker logs
+            log_errors = 0
+            if pod_phase not in config.SKIP_LOGS_STATUSES and name:
+                # Try to get logs from the container
+                rc_logs, logs_output, _ = run_cmd(
+                    ["docker", "logs", name, "--tail=50"],
+                    timeout=5,
+                )
+                if rc_logs == 0:
+                    log_errors = count_log_errors(logs_output)
+        else:
+            # Kubernetes mode
+            ns = _get_pod_namespace(pod)
+            name = _get_pod_name(pod)
 
-        if _should_skip_namespace(ns):
-            continue
+            if _should_skip_namespace(ns):
+                continue
 
-        pod_key = f"{ns}/{name}"
-        restart_count = _get_pod_restart_count(pod)
+            pod_key = f"{ns}/{name}"
+            restart_count = _get_pod_restart_count(pod)
 
-        # Get metrics from kubectl top
-        metrics = pod_metrics.get(pod_key, {})
-        cpu_m = metrics.get("cpu_m", 0)
-        memory_mib = metrics.get("memory_mib", 0)
+            # Get metrics from kubectl top
+            metrics = pod_metrics.get(pod_key, {})
+            cpu_m = metrics.get("cpu_m", 0)
+            memory_mib = metrics.get("memory_mib", 0)
 
-        # Get memory limit from pod spec
-        memory_limit_mib = _get_pod_memory_limit(pod)
+            # Get memory limit from pod spec
+            memory_limit_mib = _get_pod_memory_limit(pod)
 
-        # Get node pressure
-        node_name = pod.get("spec", {}).get("nodeName", "")
-        mem_pressure, _disk_pressure = _get_node_pressure(node_conditions, node_name)
+            # Get node pressure
+            node_name = pod.get("spec", {}).get("nodeName", "")
+            mem_pressure, _disk_pressure = _get_node_pressure(node_conditions, node_name)
 
-        # Get pod status signals (phase, container ready, wait state, etc.)
-        status_signals = get_pod_status_signals(pod)
-        pod_phase = status_signals["pod_phase"]
-        container_ready = status_signals["container_ready"]
-        wait_state = status_signals["wait_state"]
-        terminated = status_signals["terminated"]
-        terminated_reason = status_signals["terminated_reason"]
-        pod_scheduled = status_signals["pod_scheduled"]
+            # Get pod status signals (phase, container ready, wait state, etc.)
+            status_signals = get_pod_status_signals(pod)
+            pod_phase = status_signals["pod_phase"]
+            container_ready = status_signals["container_ready"]
+            wait_state = status_signals["wait_state"]
+            terminated = status_signals["terminated"]
+            terminated_reason = status_signals["terminated_reason"]
+            pod_scheduled = status_signals["pod_scheduled"]
 
-        # Collect log errors (skip for certain statuses to save API calls)
-        pod_phase = pod.get("status", {}).get("phase", "")
-        log_errors = 0
-        if pod_phase not in config.SKIP_LOGS_STATUSES:
-            container_statuses = pod.get("status", {}).get("containerStatuses", [])
-            for cs in container_statuses:
-                if cs.get("ready", False) is False or cs.get("restartCount", 0) > 0:
-                    rc_logs, logs_output, _ = run_cmd(
-                        ["kubectl", "logs", "-n", ns, name, "--tail=50"],
-                        timeout=5,
-                    )
-                    if rc_logs == 0:
-                        log_errors = count_log_errors(logs_output)
-                    break
+            # Collect log errors (skip for certain statuses to save API calls)
+            pod_phase = pod.get("status", {}).get("phase", "")
+            log_errors = 0
+            if pod_phase not in config.SKIP_LOGS_STATUSES:
+                container_statuses = pod.get("status", {}).get("containerStatuses", [])
+                for cs in container_statuses:
+                    if cs.get("ready", False) is False or cs.get("restartCount", 0) > 0:
+                        rc_logs, logs_output, _ = run_cmd(
+                            ["kubectl", "logs", "-n", ns, name, "--tail=50"],
+                            timeout=5,
+                        )
+                        if rc_logs == 0:
+                            log_errors = count_log_errors(logs_output)
+                        break
 
         # Update state model
         tracker = _state_model.update_pod(
@@ -529,7 +765,19 @@ def main() -> None:
 
     _setup_logging()
     logger.info("=== %s v%s starting ===", config.OPERATOR_NAME, config.OPERATOR_VERSION)
-    logger.info("Watch namespaces: %s", config.WATCH_NAMESPACES)
+    
+    # Detect runtime and get watch selectors
+    runtime = detect_runtime()
+    selectors = get_watch_selectors()
+    logger.info("Runtime: %s", runtime)
+    
+    if runtime == "docker":
+        logger.info("Docker watch labels: %s", selectors.get("labels", {}))
+        logger.info("Docker watch compose projects: %s", selectors.get("compose_projects", []))
+        logger.info("Docker watch names: %s", selectors.get("names", []))
+    else:
+        logger.info("Watch namespaces: %s", selectors.get("namespaces", []))
+    
     logger.info("Reconcile interval: %ds", config.RECONCILE_INTERVAL)
     logger.info("LLM backend: %s", config.LLM_BACKEND)
 

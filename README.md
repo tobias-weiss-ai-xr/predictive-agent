@@ -58,6 +58,9 @@ docker build -t predictive-agent:v4.0 .
 kubectl apply -f k8s/deployment.yaml
 kubectl apply -f k8s/service.yaml
 kubectl apply -f k8s/rbac.yaml
+
+# Or deploy with Docker Compose (see monitoring_agents Ansible role)
+docker compose -f monitoring_agents/docker-compose.yml up -d
 ```
 
 ## Configuration
@@ -70,6 +73,65 @@ OPERATOR_NAME=opendesk-predictive-agent
 OPERATOR_NAMESPACE=opendesk-predictive-agent
 OPERATOR_VERSION=4.0.0
 WATCH_NAMESPACES=opendesk,opendesk-edu,default,llm
+
+# Runtime Detection (Docker vs Kubernetes)
+# - 'docker': Monitor Docker containers via Docker socket
+# - 'kubernetes': Monitor Kubernetes pods via kubectl (default: auto-detected)
+# Auto-detection: if DOCKER_SOCKET exists or /var/run/docker.sock is available, uses 'docker'
+OPERATOR_RUNTIME=docker
+
+# Docker Mode Selectors (used when OPERATOR_RUNTIME=docker or auto-detected as Docker)
+# Filter which containers are monitored based on labels, compose projects, and names
+# If all are empty, ALL running containers are monitored
+
+# Comma-separated list of label selectors (format: key=value,key2=value2)
+# Container must have ALL specified labels to be monitored
+# Example: "app=web,env=prod,tier=backend"
+OPERATOR_WATCH_LABELS=
+
+# Comma-separated list of Docker Compose project names
+# Only containers from these projects are monitored
+# Example: "myapp,webapp,api,database"
+OPERATOR_WATCH_COMPOSE_PROJECTS=
+
+# Comma-separated list of container name patterns (supports wildcards: *, ?)
+# Container name must match at least one pattern
+# Example: "web-*,api-*,myapp-*"
+OPERATOR_WATCH_NAMES=
+
+# Kubernetes Mode Selectors (used when OPERATOR_RUNTIME=kubernetes or auto-detected as K8s)
+# Comma-separated list of namespaces to monitor
+# Example: "opendesk,opendesk-edu,default,llm"
+OPERATOR_WATCH_NAMESPACES=default
+```
+
+### OPERATOR_WATCH_* Defaults and Behavior
+
+| Variable | Default | Behavior |
+|----------|---------|----------|
+| `OPERATOR_RUNTIME` | Auto-detected | If `DOCKER_SOCKET` env var or `/var/run/docker.sock` exists, uses `docker`. Otherwise `kubernetes`. |
+| `OPERATOR_WATCH_LABELS` | Empty (no filter) | If empty, labels are not used for filtering. Container must match ALL specified labels. |
+| `OPERATOR_WATCH_COMPOSE_PROJECTS` | Empty (no filter) | If empty, all compose projects are monitored. Must match project label `com.docker.compose.project`. |
+| `OPERATOR_WATCH_NAMES` | Empty (no filter) | If empty, all container names are monitored. Supports wildcard patterns (`*`, `?`). |
+| `OPERATOR_WATCH_NAMESPACES` | `default` | In Kubernetes mode, only monitors pods in specified namespaces. |
+
+**Selector Logic (Docker mode):**
+- If ANY selector is configured (labels, compose projects, or names), a container must match ALL configured selectors to be monitored.
+- If NO selectors are configured, ALL running containers are monitored.
+- Wildcards in `OPERATOR_WATCH_NAMES` use shell-style pattern matching (e.g., `web-*` matches `web-1`, `web-2`, `web-frontend`).
+
+**Example: Monitor only production web containers**
+```env
+OPERATOR_RUNTIME=docker
+OPERATOR_WATCH_LABELS=app=web,env=prod
+OPERATOR_WATCH_COMPOSE_PROJECTS=myapp
+```
+
+**Example: Monitor all containers except test environments**
+```env
+OPERATOR_RUNTIME=docker
+OPERATOR_WATCH_LABELS=env=!test
+```
 
 # LLM (choose one backend)
 LLM_BACKEND=ollama  # ollama, saia, openai

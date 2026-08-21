@@ -1,0 +1,121 @@
+---
+# Tasks for monitoring_agents role
+
+- name: Include OS-specific variables
+  ansible.builtin.include_vars: "{{ item }}"
+  with_first_found:
+    - "{{ ansible_distribution }}_{{ ansible_distribution_major_version }}.yml"
+    - "{{ ansible_distribution }}.yml"
+    - "{{ ansible_os_family }}.yml"
+    - "default.yml"
+  when: monitoring_agents_enabled
+  tags:
+    - monitoring
+    - monitoring_agents
+
+- name: Ensure Docker Compose directory exists
+  ansible.builtin.file:
+    path: "{{ monitoring_agents_compose_dir }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  when:
+    - monitoring_agents_enabled
+    - monitoring_agents_create_compose_dir
+  tags:
+    - monitoring
+    - monitoring_agents
+    - compose
+
+- name: Ensure state directory exists
+  ansible.builtin.file:
+    path: "{{ monitoring_agents_state_dir }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  when: monitoring_agents_enabled
+  tags:
+    - monitoring
+    - monitoring_agents
+    - state
+
+- name: Deploy Docker Compose file for monitoring agents
+  ansible.builtin.template:
+    src: "docker-compose.yml.j2"
+    dest: "{{ monitoring_agents_compose_file }}"
+    mode: "0644"
+    owner: root
+    group: root
+  when:
+    - monitoring_agents_enabled
+    - monitoring_agents_containers | length > 0
+  tags:
+    - monitoring
+    - monitoring_agents
+    - compose
+    - deploy
+
+- name: Pull container images
+  ansible.builtin.command: >
+    docker compose -f {{ monitoring_agents_compose_file }} -p {{ monitoring_agents_compose_project }} pull
+  args:
+    chdir: "{{ monitoring_agents_compose_dir }}"
+  register: compose_pull
+  changed_when: compose_pull.rc == 0
+  failed_when: compose_pull.rc != 0
+  when:
+    - monitoring_agents_enabled
+    - monitoring_agents_containers | length > 0
+  tags:
+    - monitoring
+    - monitoring_agents
+    - compose
+    - pull
+
+- name: Start monitoring containers
+  ansible.builtin.command: >
+    docker compose -f {{ monitoring_agents_compose_file }} -p {{ monitoring_agents_compose_project }} up -d
+  args:
+    chdir: "{{ monitoring_agents_compose_dir }}"
+  register: compose_up
+  changed_when: compose_up.rc == 0
+  failed_when: compose_up.rc != 0
+  when:
+    - monitoring_agents_enabled
+    - monitoring_agents_containers | length > 0
+  tags:
+    - monitoring
+    - monitoring_agents
+    - compose
+    - start
+
+- name: Verify monitoring containers are running
+  ansible.builtin.command: >
+    docker compose -f {{ monitoring_agents_compose_file }} -p {{ monitoring_agents_compose_project }} ps --format json
+  args:
+    chdir: "{{ monitoring_agents_compose_dir }}"
+  register: compose_ps
+  changed_when: false
+  when:
+    - monitoring_agents_enabled
+    - monitoring_agents_containers | length > 0
+  tags:
+    - monitoring
+    - monitoring_agents
+    - compose
+    - verify
+
+- name: Display container status
+  ansible.builtin.debug:
+    var: compose_ps.stdout_lines
+  when:
+    - monitoring_agents_enabled
+    - monitoring_agents_containers | length > 0
+    - compose_ps is defined
+  tags:
+    - monitoring
+    - monitoring_agents
+    - compose
+    - status

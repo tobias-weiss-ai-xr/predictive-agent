@@ -1,0 +1,134 @@
+version: '3.8'
+
+services:
+{% for container in monitoring_agents_containers %}
+  {{ container.name | default('monitoring-agent') }}:
+    image: {{ container.image | mandatory }}
+    container_name: {{ container.name | default('monitoring-agent') }}
+    restart: {{ container.restart | default('unless-stopped') }}
+    {% if container.pull_policy is defined %}
+    pull_policy: {{ container.pull_policy }}
+    {% endif %}
+    environment:
+      # OPERATOR_WATCH_* configuration for predictive-agent
+      - OPERATOR_RUNTIME={{ operator_runtime | default('docker') }}
+      {% if operator_watch_labels %}
+      - OPERATOR_WATCH_LABELS={{ operator_watch_labels }}
+      {% endif %}
+      {% if operator_watch_compose_projects %}
+      - OPERATOR_WATCH_COMPOSE_PROJECTS={{ operator_watch_compose_projects }}
+      {% endif %}
+      {% if operator_watch_names %}
+      - OPERATOR_WATCH_NAMES={{ operator_watch_names }}
+      {% endif %}
+      {% if operator_watch_namespaces %}
+      - OPERATOR_WATCH_NAMESPACES={{ operator_watch_namespaces }}
+      {% endif %}
+      
+      # Additional environment from container definition
+      {% for key, value in container.environment | default({}) | dict2items %}
+      - {{ key }}={{ value }}
+      {% endfor %}
+      
+      # Default predictive-agent settings
+      - OPERATOR_NAME=predictive-agent
+      - OPERATOR_VERSION=4.0.0
+      - RECONCILE_INTERVAL={{ container.environment.RECONCILE_INTERVAL | default('60') }}
+      - PREDICTION_ENABLED=true
+      - PREDICTION_RISK_THRESHOLD={{ container.environment.PREDICTION_RISK_THRESHOLD | default('0.5') }}
+      - STATE_MODEL_FILE=/var/lib/opendesk/state-model.json
+      - PREDICTIONS_FILE=/var/lib/opendesk/predictions.json
+      - HISTORY_FILE=/var/lib/opendesk/analysis-history.json
+    volumes:
+      # Docker socket for container discovery (Docker mode)
+      - {{ monitoring_agents_docker_socket }}:/var/run/docker.sock:ro
+      # Persistent state storage
+      - {{ monitoring_agents_state_dir }}:/var/lib/opendesk
+      {% for volume in container.volumes | default([]) %}
+      - "{{ volume }}"
+      {% endfor %}
+    ports:
+      {% for port in container.ports | default([]) %}
+      - "{{ port }}"
+      {% endfor %}
+    networks:
+      {% if container.networks is defined %}
+      {% for network in container.networks %}
+      - {{ network }}
+      {% endfor %}
+      {% else %}
+      - default
+      {% endif %}
+    {% if container.command is defined %}
+    command: {{ container.command }}
+    {% endif %}
+    {% if container.entrypoint is defined %}
+    entrypoint: {{ container.entrypoint }}
+    {% endif %}
+    {% if container.user is defined %}
+    user: {{ container.user }}
+    {% endif %}
+    {% if container.working_dir is defined %}
+    working_dir: {{ container.working_dir }}
+    {% endif %}
+    {% if container.env_file is defined %}
+    env_file:
+      {% for file in container.env_file %}
+      - {{ file }}
+      {% endfor %}
+    {% endif %}
+    {% if container.depends_on is defined %}
+    depends_on:
+      {% for dep in container.depends_on %}
+      - {{ dep }}
+      {% endfor %}
+    {% endif %}
+    {% if container.healthcheck is defined %}
+    healthcheck:
+      {{ container.healthcheck | to_yaml | indent(6) }}
+    {% endif %}
+    {% if container.labels is defined %}
+    labels:
+      {% for key, value in container.labels | dict2items %}
+      - "{{ key }}={{ value }}"
+      {% endfor %}
+    {% endif %}
+    {% if container.cap_add is defined %}
+    cap_add:
+      {% for cap in container.cap_add %}
+      - {{ cap }}
+      {% endfor %}
+    {% endif %}
+    {% if container.cap_drop is defined %}
+    cap_drop:
+      {% for cap in container.cap_drop %}
+      - {{ cap }}
+      {% endfor %}
+    {% endif %}
+    {% if container.security_opt is defined %}
+    security_opt:
+      {% for opt in container.security_opt %}
+      - {{ opt }}
+      {% endfor %}
+    {% endif %}
+    {% if container.devices is defined %}
+    devices:
+      {% for device in container.devices %}
+      - "{{ device }}"
+      {% endfor %}
+    {% endif %}
+    {% if container.ulimits is defined %}
+    ulimits:
+      {{ container.ulimits | to_yaml | indent(6) }}
+    {% endif %}
+    {% if container.sysctls is defined %}
+    sysctls:
+      {% for key, value in container.sysctls | dict2items %}
+      - "{{ key }}={{ value }}"
+      {% endfor %}
+    {% endif %}
+{% endfor %}
+
+networks:
+  default:
+    driver: bridge

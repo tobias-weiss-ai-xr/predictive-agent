@@ -1,0 +1,54 @@
+---
+# Default variables for monitoring_agents role
+
+# Enable/disable the role
+monitoring_agents_enabled: true
+
+# Docker Compose project name
+monitoring_agents_compose_project: "monitoring"
+
+# Directory for Docker Compose files
+monitoring_agents_compose_dir: "/opt/monitoring"
+
+# Docker Compose version to use (v1 or v2)
+monitoring_agents_compose_version: "v2"
+
+# Default OPERATOR_WATCH_* environment variables
+# These control which containers are monitored by predictive-agent
+
+# Container runtime: 'docker' or 'kubernetes' (auto-detected if empty)
+operator_runtime: ""
+
+# Label selectors for Docker containers (comma-separated key=value pairs)
+# Example: "app=web,env=prod"
+operator_watch_labels: ""
+
+# Docker Compose project names to monitor (comma-separated)
+# Example: "myapp,webapp,api"
+operator_watch_compose_projects: ""
+
+# Container name patterns to monitor (comma-separated, supports wildcards)
+# Example: "web-*,api-*,db"
+operator_watch_names: ""
+
+# Kubernetes namespaces to monitor (comma-separated, Kubernetes mode only)
+# Example: "opendesk,opendesk-edu,default,llm"
+operator_watch_namespaces: "default"
+
+# Default monitoring containers to deploy
+monitoring_agents_containers: []
+
+# Docker Compose file path
+monitoring_agents_compose_file: "{{ monitoring_agents_compose_dir }}/docker-compose.yml"
+
+# Ensure compose directory exists
+monitoring_agents_create_compose_dir: true
+
+# Docker Compose command timeout
+monitoring_agents_compose_timeout: 60
+
+# State directory for persistent data
+monitoring_agents_state_dir: "/var/lib/opendesk"
+
+# Docker socket path
+monitoring_agents_docker_socket: "/var/run/docker.sock"
