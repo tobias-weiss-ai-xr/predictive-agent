@@ -41,6 +41,7 @@ from predictive_agent.collector import (
     count_log_errors,
     get_node_conditions,
     get_pod_resources,
+    get_pod_status_signals,
     run_cmd,
 )
 from predictive_agent.notifier import NotificationManager, create_notifier_from_config
@@ -221,6 +222,15 @@ def reconcile() -> Dict[str, Any]:
         node_name = pod.get("spec", {}).get("nodeName", "")
         mem_pressure, _disk_pressure = _get_node_pressure(node_conditions, node_name)
 
+        # Get pod status signals (phase, container ready, wait state, etc.)
+        status_signals = get_pod_status_signals(pod)
+        pod_phase = status_signals["pod_phase"]
+        container_ready = status_signals["container_ready"]
+        wait_state = status_signals["wait_state"]
+        terminated = status_signals["terminated"]
+        terminated_reason = status_signals["terminated_reason"]
+        pod_scheduled = status_signals["pod_scheduled"]
+
         # Collect log errors (skip for certain statuses to save API calls)
         pod_phase = pod.get("status", {}).get("phase", "")
         log_errors = 0
@@ -296,6 +306,12 @@ def reconcile() -> Dict[str, Any]:
                 memory_anomaly_score=tracker.memory_anomaly_score,
                 cpu_anomaly_score=tracker.cpu_anomaly_score,
                 blast_radius=blast_radius,
+                pod_phase=pod_phase,
+                container_ready=container_ready,
+                wait_state=wait_state,
+                terminated=terminated,
+                terminated_reason=terminated_reason,
+                pod_scheduled=pod_scheduled,
             )
 
             if result.risk_score >= _predictor.risk_threshold:

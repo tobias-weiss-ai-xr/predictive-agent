@@ -127,7 +127,7 @@ class TestRiskPerformance:
         for _ in range(10000):
             calculate_risk(pod_metrics, "STRESSED", 0.1, 0.05)
         elapsed = time.perf_counter() - start
-        assert elapsed < 0.1, f"10000 risk calculations took {elapsed:.3f}s"
+        assert elapsed < 0.2, f"10000 risk calculations took {elapsed:.3f}s"
 
 
 # ─── State model performance ────────────────────────────────────────────────

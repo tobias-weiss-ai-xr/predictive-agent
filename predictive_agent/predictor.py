@@ -55,6 +55,12 @@ class Predictor:
         memory_anomaly_score: float = 0.0,
         cpu_anomaly_score: float = 0.0,
         blast_radius: int = 0,
+        pod_phase: str = "Running",
+        container_ready: bool = True,
+        wait_state: Optional[str] = None,
+        terminated: bool = False,
+        terminated_reason: Optional[str] = None,
+        pod_scheduled: bool = True,
     ) -> PredictionResult:
         """Predict pod health and time-to-failure.
 
@@ -76,6 +82,12 @@ class Predictor:
             memory_anomaly_score: Memory anomaly score (0=normal, >3=anomalous)
             cpu_anomaly_score: CPU anomaly score (0=normal, >3=anomalous)
             blast_radius: Impact radius from knowledge graph (0=not connected)
+            pod_phase: Pod phase (Running, Pending, Failed, Succeeded, Unknown)
+            container_ready: Whether the main container is ready
+            wait_state: Container waiting state reason (e.g. CrashLoopBackOff)
+            terminated: Whether the container was terminated
+            terminated_reason: Termination reason (e.g. OOMKilled, Error)
+            pod_scheduled: Whether the pod has been scheduled
 
         Returns:
             PredictionResult with risk score, TTF, confidence, and trends.
@@ -95,6 +107,12 @@ class Predictor:
             "memory_anomaly_score": memory_anomaly_score,
             "cpu_anomaly_score": cpu_anomaly_score,
             "blast_radius": blast_radius,
+            "pod_phase": pod_phase,
+            "container_ready": container_ready,
+            "wait_state": wait_state,
+            "terminated": terminated,
+            "terminated_reason": terminated_reason,
+            "pod_scheduled": pod_scheduled,
         }
 
         risk_score = calculate_risk(

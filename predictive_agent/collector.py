@@ -123,3 +123,73 @@ def count_log_errors(log_text):
         if _ERROR_RE.search(line):
             count += 1
     return count
+
+
+# Container statuses that indicate serious problems
+_CRASH_STATES = {
+    "CrashLoopBackOff", "CreateContainerConfigError", "CreateContainerError",
+    "ImagePullBackOff", "ErrImagePull", "InvalidImageName",
+    "RunContainerError", "ContainerStatusUnknown",
+}
+
+
+def get_pod_status_signals(pod_json):
+    """Extract pod phase and container status signals from pod JSON.
+
+    Returns a dict with:
+        pod_phase: str (Pending, Running, Succeeded, Failed, Unknown)
+        container_ready: bool (True if main container is ready)
+        wait_state: str or None (reason if container is waiting, e.g. CrashLoopBackOff)
+        terminated: bool (True if container was terminated)
+        terminated_reason: str or None (e.g. OOMKilled, Error)
+        restart_count: int (total restarts across all containers)
+        pod_initialized: bool
+        pod_scheduled: bool
+    """
+    status = pod_json.get("status", {})
+    spec = pod_json.get("spec", {})
+
+    pod_phase = status.get("phase", "Unknown")
+
+    # Pod conditions
+    conditions = {c.get("type"): c.get("status") for c in status.get("conditions", [])}
+    pod_initialized = conditions.get("Initialized", "False") == "True"
+    pod_scheduled = conditions.get("PodScheduled", "False") == "True"
+
+    # Container statuses
+    container_ready = True
+    wait_state = None
+    terminated = False
+    terminated_reason = None
+    restart_count = 0
+
+    for cs in status.get("containerStatuses", []):
+        restart_count += cs.get("restartCount", 0)
+        if not cs.get("ready", False):
+            container_ready = False
+        # Check waiting state
+        waiting = cs.get("state", {}).get("waiting", {})
+        if waiting:
+            reason = waiting.get("reason", "")
+            if reason:
+                wait_state = reason
+        # Check terminated state
+        term = cs.get("state", {}).get("terminated", {})
+        if term:
+            terminated = True
+            terminated_reason = term.get("reason", "")
+        # Check last state for terminated info
+        last_term = cs.get("lastState", {}).get("terminated", {})
+        if last_term and not terminated:
+            terminated_reason = last_term.get("reason", "")
+
+    return {
+        "pod_phase": pod_phase,
+        "container_ready": container_ready,
+        "wait_state": wait_state,
+        "terminated": terminated,
+        "terminated_reason": terminated_reason,
+        "restart_count": restart_count,
+        "pod_initialized": pod_initialized,
+        "pod_scheduled": pod_scheduled,
+    }

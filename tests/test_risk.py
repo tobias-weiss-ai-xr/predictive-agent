@@ -134,3 +134,146 @@ def test_risk_stressed_with_restart_crosses_threshold():
     }
     risk = calculate_risk(metrics, "STRESSED", 0.1, 0.0)
     assert risk > 0.5
+
+
+def test_risk_crash_loop_back_off():
+    """CrashLoopBackOff should significantly increase risk."""
+    base = {
+        "memory_pct": 50.0,
+        "cpu_pct": 30.0,
+        "restart_rate_per_hr": 0.0,
+        "log_error_rate_per_min": 0.0,
+        "pod_phase": "Running",
+        "container_ready": False,
+        "wait_state": "CrashLoopBackOff",
+    }
+    risk = calculate_risk(base, "HEALTHY", 0.0, 0.0)
+ # Without CrashLoopBackOff
+    base_no_crash = {**base, "wait_state": None, "container_ready": True}
+    risk_no_crash = calculate_risk(base_no_crash, "HEALTHY", 0.0, 0.0)
+    assert risk > risk_no_crash
+    assert risk > 0.5  # Should be high risk
+
+
+def test_risk_create_container_config_error():
+    """CreateContainerConfigError should significantly increase risk."""
+    metrics = {
+        "memory_pct": 50.0,
+        "cpu_pct": 30.0,
+        "restart_rate_per_hr": 0.0,
+        "log_error_rate_per_min": 0.0,
+        "pod_phase": "Pending",
+        "container_ready": False,
+        "wait_state": "CreateContainerConfigError",
+    }
+    risk = calculate_risk(metrics, "HEALTHY", 0.0, 0.0)
+    assert risk > 0.5
+
+
+def test_risk_image_pull_back_off():
+    """ImagePullBackOff should increase risk."""
+    metrics = {
+        "memory_pct": 50.0,
+        "cpu_pct": 30.0,
+        "restart_rate_per_hr": 0.0,
+        "log_error_rate_per_min": 0.0,
+        "pod_phase": "Pending",
+        "container_ready": False,
+        "wait_state": "ImagePullBackOff",
+    }
+    risk = calculate_risk(metrics, "HEALTHY", 0.0, 0.0)
+    assert risk > 0.3
+
+
+def test_risk_pending_phase():
+    """Pending phase should increase risk."""
+    base = {
+        "memory_pct": 50.0,
+        "cpu_pct": 30.0,
+        "restart_rate_per_hr": 0.0,
+        "log_error_rate_per_min": 0.0,
+        "pod_phase": "Running",
+    }
+    risk_running = calculate_risk(base, "HEALTHY", 0.0, 0.0)
+    base_pending = {**base, "pod_phase": "Pending"}
+    risk_pending = calculate_risk(base_pending, "HEALTHY", 0.0, 0.0)
+    assert risk_pending > risk_running
+
+
+def test_risk_failed_phase():
+    """Failed phase should produce very high risk."""
+    metrics = {
+        "memory_pct": 50.0,
+        "cpu_pct": 30.0,
+        "restart_rate_per_hr": 0.0,
+        "log_error_rate_per_min": 0.0,
+        "pod_phase": "Failed",
+        "container_ready": False,
+        "terminated": True,
+        "terminated_reason": "Error",
+    }
+    risk = calculate_risk(metrics, "HEALTHY", 0.0, 0.0)
+    assert risk > 0.8
+
+
+def test_risk_succeeded_phase():
+    """Succeeded phase should produce very low risk."""
+    metrics = {
+        "memory_pct": 50.0,
+        "cpu_pct": 30.0,
+        "restart_rate_per_hr": 0.0,
+        "log_error_rate_per_min": 0.0,
+        "pod_phase": "Succeeded",
+        "terminated": True,
+        "terminated_reason": "Completed",
+    }
+    risk = calculate_risk(metrics, "HEALTHY", 0.0, 0.0)
+    assert risk < 0.05
+
+
+def test_risk_oom_killed():
+    """OOMKilled should significantly increase risk."""
+    base = {
+        "memory_pct": 50.0,
+        "cpu_pct": 30.0,
+        "restart_rate_per_hr": 0.0,
+        "log_error_rate_per_min": 0.0,
+        "pod_phase": "Running",
+    }
+    risk_base = calculate_risk(base, "HEALTHY", 0.0, 0.0)
+    base_oom = {**base, "terminated": True, "terminated_reason": "OOMKilled"}
+    risk_oom = calculate_risk(base_oom, "HEALTHY", 0.0, 0.0)
+    assert risk_oom > risk_base
+    assert risk_oom > 0.5
+
+
+def test_risk_not_scheduled():
+    """Unscheduled pod should have increased risk."""
+    base = {
+        "memory_pct": 50.0,
+        "cpu_pct": 30.0,
+        "restart_rate_per_hr": 0.0,
+        "log_error_rate_per_min": 0.0,
+        "pod_phase": "Running",
+        "pod_scheduled": True,
+    }
+    risk_scheduled = calculate_risk(base, "HEALTHY", 0.0, 0.0)
+    base_unscheduled = {**base, "pod_scheduled": False, "pod_phase": "Pending"}
+    risk_unscheduled = calculate_risk(base_unscheduled, "HEALTHY", 0.0, 0.0)
+    assert risk_unscheduled > risk_scheduled
+
+
+def test_risk_container_not_ready():
+    """Container not ready should increase risk."""
+    base = {
+        "memory_pct": 50.0,
+        "cpu_pct": 30.0,
+        "restart_rate_per_hr": 0.0,
+        "log_error_rate_per_min": 0.0,
+        "pod_phase": "Running",
+        "container_ready": True,
+    }
+    risk_ready = calculate_risk(base, "HEALTHY", 0.0, 0.0)
+    base_not_ready = {**base, "container_ready": False}
+    risk_not_ready = calculate_risk(base_not_ready, "HEALTHY", 0.0, 0.0)
+    assert risk_not_ready > risk_ready

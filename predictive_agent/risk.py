@@ -18,13 +18,18 @@ def calculate_risk(pod_metrics, markov_state, markov_p_critical, markov_p_failed
     - Markov state + transition probabilities
     - Anomaly scores (memory and CPU, from Kalman innovation)
     - Blast radius (from knowledge graph, 0=not connected)
+    - Pod phase (Pending, Failed, Unknown)
+    - Container status (not ready, CrashLoopBackOff, CreateContainerConfigError, etc.)
+    - Container termination (OOMKilled, Error)
 
     Args:
         pod_metrics: dict with keys like memory_pct, memory_trend_mib_per_min,
                      cpu_pct, cpu_trend_m_per_min, restart_rate_per_hr,
                      log_error_rate_per_min, node_memory_pressure,
                      node_disk_pressure, memory_limit_mib, memory_mib,
-                     memory_anomaly_score, cpu_anomaly_score, blast_radius
+                     memory_anomaly_score, cpu_anomaly_score, blast_radius,
+                     pod_phase, container_ready, wait_state, terminated,
+                     terminated_reason, pod_scheduled
         markov_state: current Markov state string
         markov_p_critical: probability of transitioning to CRITICAL
         markov_p_failed: probability of transitioning to FAILED
@@ -134,6 +139,62 @@ def calculate_risk(pod_metrics, markov_state, markov_p_critical, markov_p_failed
         lr *= 2.0
     elif blast_radius > 5:
         lr *= 1.5
+
+    # ─── Pod phase / container status signals ─────────────────────────
+    # These capture failures that CPU/memory/restart signals miss:
+    # CrashLoopBackOff, CreateContainerConfigError, Pending, etc.
+    pod_phase = pod_metrics.get("pod_phase", "Running")
+    container_ready = pod_metrics.get("container_ready", True)
+    wait_state = pod_metrics.get("wait_state", None)
+    terminated = pod_metrics.get("terminated", False)
+    terminated_reason = pod_metrics.get("terminated_reason", None)
+    pod_scheduled = pod_metrics.get("pod_scheduled", True)
+
+    # Pod phase: non-Running phases are strong risk signals
+    if pod_phase == "Failed":
+        lr *= 20.0
+    elif pod_phase == "Unknown":
+        lr *= 10.0
+    elif pod_phase == "Pending":
+        lr *= 3.0  # Can't schedule — likely resource/dependency issue
+    elif pod_phase == "Succeeded":
+        lr *= 0.1  # Completed successfully — very low risk
+
+    # Pod not scheduled — stuck in scheduling
+    if not pod_scheduled:
+        lr *= 5.0
+
+    # Container not ready — strong signal something is wrong
+    if not container_ready:
+        lr *= 5.0
+
+    # Container waiting states (CrashLoopBackOff, CreateContainerConfigError, etc.)
+    if wait_state:
+        if wait_state == "CrashLoopBackOff":
+            lr *= 15.0
+        elif wait_state in ("CreateContainerConfigError", "CreateContainerError"):
+            lr *= 10.0
+        elif wait_state in ("ImagePullBackOff", "ErrImagePull"):
+            lr *= 8.0
+        elif wait_state == "InvalidImageName":
+            lr *= 8.0
+        elif wait_state == "RunContainerError":
+            lr *= 10.0
+        elif wait_state in ("ContainerCreating", "PodInitializing"):
+            lr *= 2.0  # Normal during startup, but if persistent, risky
+        else:
+            lr *= 3.0  # Unknown waiting state
+
+    # Container terminated — check termination reason
+    if terminated:
+        if terminated_reason == "OOMKilled":
+            lr *= 12.0
+        elif terminated_reason == "Error":
+            lr *= 5.0
+        elif terminated_reason == "Completed":
+            lr *= 0.1  # Normal completion
+        elif terminated_reason:
+            lr *= 3.0  # Other termination reason
 
     # Bayesian update
     posterior = (prior * lr) / (prior * lr + (1 - prior))
