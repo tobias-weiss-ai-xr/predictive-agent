@@ -39,6 +39,7 @@ LOG_VERBOSITY = os.environ.get("LOG_VERBOSITY", "info")
 # ─── Prediction ──────────────────────────────────────────────────────────────
 PREDICTION_ENABLED = os.environ.get("PREDICTION_ENABLED", "true").lower() == "true"
 PREDICTION_RISK_THRESHOLD = float(os.environ.get("PREDICTION_RISK_THRESHOLD", "0.5"))
+PREDICTION_BASE_RISK = float(os.environ.get("PREDICTION_BASE_RISK", "0.15"))
 
 # ─── Kalman Filter ───────────────────────────────────────────────────────────
 KALMAN_PROCESS_NOISE = float(os.environ.get("KALMAN_PROCESS_NOISE", "1.0"))

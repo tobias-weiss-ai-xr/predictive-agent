@@ -16,7 +16,7 @@ def test_risk_calculation_low_risk():
     }
 
     risk = calculate_risk(pod_metrics, "HEALTHY", 0.01, 0.001)
-    assert 0 <= risk <= 0.1  # Low risk
+    assert 0 <= risk <= 0.2  # Low risk (higher with new prior of 0.15)
 
 
 def test_risk_calculation_high_risk():
@@ -56,7 +56,7 @@ def test_risk_calculation_with_memory_ttf():
 def test_risk_calculation_no_metrics():
     """Test risk with empty metrics."""
     risk = calculate_risk({}, "HEALTHY", 0.0, 0.0)
-    assert 0 <= risk <= 0.1  # Should be near prior
+    assert 0.14 <= risk <= 0.16  # Should be near prior of 0.15
 
 
 def test_risk_calculation_boundary():
@@ -118,10 +118,10 @@ def test_risk_log_errors_any_increase():
     assert some_errors > no_errors
 
 
-def test_risk_prior_is_0_02():
-    """Base rate (no signals) should produce risk around 0.02."""
+def test_risk_prior_is_0_15():
+    """Base rate (no signals) should produce risk around 0.15."""
     risk = calculate_risk({}, "HEALTHY", 0.0, 0.0)
-    assert 0.015 <= risk <= 0.025
+    assert 0.14 <= risk <= 0.16
 
 
 def test_risk_stressed_with_restart_crosses_threshold():

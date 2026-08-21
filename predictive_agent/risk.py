@@ -1,6 +1,7 @@
 """Bayesian risk scoring combining multiple signals."""
 
 import math
+from predictive_agent.config import PREDICTION_BASE_RISK
 
 
 def calculate_risk(pod_metrics, markov_state, markov_p_critical, markov_p_failed):
@@ -31,7 +32,7 @@ def calculate_risk(pod_metrics, markov_state, markov_p_critical, markov_p_failed
     Returns:
         float: risk score 0.0 to 0.99
     """
-    prior = 0.02  # base rate (~2% of pods experience issues per cycle)
+    prior = PREDICTION_BASE_RISK  # base rate (~15-20% of pods experience issues per cycle based on backtest calibration)
     lr = 1.0  # likelihood ratio multiplier
 
     mem_pct = pod_metrics.get("memory_pct", 0)

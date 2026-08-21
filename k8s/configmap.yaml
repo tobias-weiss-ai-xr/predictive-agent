@@ -24,6 +24,7 @@ data:
   # Prediction configuration
   PREDICTION_ENABLED: "true"
   PREDICTION_RISK_THRESHOLD: "0.3"
+  PREDICTION_BASE_RISK: "0.15"
 
   # Kalman filter tuning
   KALMAN_PROCESS_NOISE: "1.0"

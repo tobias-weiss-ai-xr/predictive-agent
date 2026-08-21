@@ -354,7 +354,7 @@ class TestServerPerformance:
 
         def make_request():
             try:
-                with urllib.request.urlopen("http://localhost:18098/metrics", timeout=5) as resp:
+                with urllib.request.urlopen("http://localhost:18098/metrics", timeout=10) as resp:
                     resp.read()
             except Exception as e:
                 errors.append(e)

@@ -151,7 +151,7 @@ class TestRiskBoundary:
     def test_all_zero_metrics(self):
         """All metrics zero should yield near-prior risk."""
         risk = calculate_risk({}, "HEALTHY", 0.0, 0.0)
-        assert 0 <= risk < 0.05
+        assert 0.14 <= risk <= 0.16  # prior is now 0.15 based on calibration
 
     def test_all_maxed_metrics(self):
         """All metrics maxed should yield near-max risk but ≤ 0.99."""
