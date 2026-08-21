@@ -48,7 +48,7 @@ let
 in
 pkgs.dockerTools.buildLayeredImage {
   name = "predictive-agent";
-  tag = "v8.6-nix";
+  tag = "v8.7-nix";
 
   contents = with pkgs; [
     python3
@@ -88,7 +88,7 @@ pkgs.dockerTools.buildLayeredImage {
       "REMEDIATION_MAX_PER_MIN=5"
       "REMEDIATION_MAX_PER_HOUR=50"
       "REMEDIATION_COOLDOWN_S=300"
-      "REMEDIATION_RISK_THRESHOLD=70.0"
+      "REMEDIATION_RISK_THRESHOLD=0.7"
       "REMEDIATION_PROTECTED_NS=kube-system,opendesk-predictive-agent"
       "ALERT_EMAIL_TO=tobias.weiss@uni-marburg.de"
       "SMTP_HOST=smtp.uni-marburg.de"
@@ -97,6 +97,7 @@ pkgs.dockerTools.buildLayeredImage {
       "WEBHOOK_URL="
       "WEBHOOK_TIMEOUT=10"
       "PYTHONPATH=/opt/predictive-agent"
+      "PREDICTION_BASE_RISK=0.15"
       "PATH=${pkgs.python3}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin:${pkgs.gnused}/bin:${pkgs.procps}/bin:${pkgs.kubectl}/bin"
       "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
       "HOME=/home/opendesk"
