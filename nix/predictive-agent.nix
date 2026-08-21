@@ -48,7 +48,7 @@ let
 in
 pkgs.dockerTools.buildLayeredImage {
   name = "predictive-agent";
-  tag = "v8.7-nix";
+  tag = "v8.8-nix";
 
   contents = with pkgs; [
     python3
