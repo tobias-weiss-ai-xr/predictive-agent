@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
-# Predictive Agent v4.0 — Predictive Kubernetes Health Monitor
-# Image: predictive-agent:v8-nix
+# Predictive Agent v4.0.1 — Predictive Kubernetes Health Monitor with Performance Optimizations
+# Image: predictive-agent:v8.9-nix
 # Built with: Nix dockerTools.buildLayeredImage using nixpkgs
 # Contains: python3, curl, bash, kubectl, coreutils, gnugrep, gnused, procps, cacert
 # Entrypoint: runs predictive_agent.main (the reconcile loop)
@@ -16,15 +16,27 @@ let
   entrypointSh = pkgs.writeText "entrypoint.sh" (builtins.readFile ./predictive-agent-files/entrypoint.sh);
   healthcheckSh = pkgs.writeText "healthcheck.sh" (builtins.readFile ./predictive-agent-files/healthcheck.sh);
 
-  # The v4.0 predictive_agent package (stdlib-only Python) lives at the repo root.
-  # Copy the *.py modules into /opt/predictive-agent/predictive_agent so the
-  # package is importable via `python3 -m predictive_agent.main`
-  # (PYTHONPATH=/opt/predictive-agent).
-  # Also copy the actions/ subdirectory for remediation action modules.
+  # The v4.0.1 predictive_agent package (stdlib-only Python) with optimizations.
+  # Copy all modules: main package, actions, optimizer, cache, llm_batch, benchmark tests.
+  # Also copy the tests/benchmark directory for potential in-container testing.
   predictiveAgentPackage = pkgs.runCommand "predictive-agent-package" {} ''
     mkdir -p $out/opt/predictive-agent/predictive_agent/actions
+    mkdir -p $out/opt/predictive-agent/predictive_agent/tests/benchmark
+    
+    # Main package files
     cp ${../predictive_agent}/*.py $out/opt/predictive-agent/predictive_agent/
     cp ${../predictive_agent/actions}/*.py $out/opt/predictive-agent/predictive_agent/actions/
+    
+    # Optimization modules (NEW in v4.0.1)
+    cp ${../predictive_agent/l1_cache.py} $out/opt/predictive-agent/predictive_agent/
+    cp ${../predictive_agent/llm_batch.py} $out/opt/predictive-agent/predictive_agent/
+    cp ${../predictive_agent/optimize.py} $out/opt/predictive-agent/predictive_agent/
+    cp ${../predictive_agent/demo_optimizations.py} $out/opt/predictive-agent/predictive_agent/
+    
+    # Benchmark test modules
+    cp ${../tests/benchmark}/* $out/opt/predictive-agent/predictive_agent/tests/benchmark/ 2>/dev/null || true
+    
+    # Entrypoint and healthcheck
     cp ${entrypointSh} $out/opt/predictive-agent/entrypoint.sh
     chmod +x $out/opt/predictive-agent/entrypoint.sh
     cp ${healthcheckSh} $out/opt/predictive-agent/healthcheck.sh
@@ -48,7 +60,7 @@ let
 in
 pkgs.dockerTools.buildLayeredImage {
   name = "predictive-agent";
-  tag = "v8.8-nix";
+  tag = "v8.9-nix";
 
   contents = with pkgs; [
     python3
@@ -63,6 +75,8 @@ pkgs.dockerTools.buildLayeredImage {
     cacert
     predictiveAgentPackage
     etcFiles
+    # Python packages for optimizations
+    (python3Packages.psutil.override { python = pkgs.python3; })  # For CPU monitoring
   ];
 
   config = {
@@ -74,7 +88,7 @@ pkgs.dockerTools.buildLayeredImage {
     ];
     Cmd = [];
     Env = [
-      "OPERATOR_VERSION=4.0.0"
+      "OPERATOR_VERSION=4.0.1"
       "OPERATOR_NAME=opendesk-predictive-agent"
       "OPERATOR_NAMESPACE=opendesk-predictive-agent"
       "OPERATOR_WATCH_NAMESPACES=opendesk,opendesk-edu,default,llm"
