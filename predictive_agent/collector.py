@@ -1,15 +1,82 @@
 """Metrics collection from kubectl (top pods, get pods, logs, node conditions)."""
 
+import hashlib
 import json
 import re
 import subprocess
+import time
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
 
 # Pre-compiled regex for error detection (much faster than 10 separate re.search calls)
 _ERROR_RE = re.compile(
     r"\b(?:ERROR|Error|FATAL|PANIC|OOM|CrashLoopBackOff|Exception|Traceback)\b"
     r"|\bpanic:|\bfatal:"
 )
+
+# Cache for kubectl command results (to avoid repeated calls)
+_kubectl_cache: Dict[str, Tuple[Any, float]] = {}
+_kubectl_cache_lock = None  # Will be initialized when cache is used
+
+# Statistics for cache performance
+_kubectl_cache_hits = 0
+_kubectl_cache_misses = 0
+
+
+def _get_cache_lock():
+    """Lazy initialization of cache lock."""
+    global _kubectl_cache_lock
+    if _kubectl_cache_lock is None:
+        import threading
+        _kubectl_cache_lock = threading.Lock()
+    return _kubectl_cache_lock
+
+
+def _get_kubectl_cache(key: str, ttl: float = 30.0) -> Tuple[bool, Any]:
+    """Get a value from the kubectl cache if it exists and is not expired."""
+    global _kubectl_cache_hits, _kubectl_cache_misses
+    
+    lock = _get_cache_lock()
+    with lock:
+        if key in _kubectl_cache:
+            value, timestamp = _kubectl_cache[key]
+            if time.time() - timestamp < ttl:
+                _kubectl_cache_hits += 1
+                return True, value
+            else:
+                # Expired
+                del _kubectl_cache[key]
+        _kubectl_cache_misses += 1
+        return False, None
+
+
+def _set_kubectl_cache(key: str, value: Any) -> None:
+    """Set a value in the kubectl cache."""
+    lock = _get_cache_lock()
+    with lock:
+        _kubectl_cache[key] = (value, time.time())
+
+
+def get_kubectl_cache_stats() -> Dict[str, Any]:
+    """Get cache statistics."""
+    total = _kubectl_cache_hits + _kubectl_cache_misses
+    hit_rate = _kubectl_cache_hits / total if total > 0 else 0.0
+    return {
+        'hits': _kubectl_cache_hits,
+        'misses': _kubectl_cache_misses,
+        'hit_rate': f"{hit_rate:.2%}",
+        'size': len(_kubectl_cache),
+    }
+
+
+def clear_kubectl_cache() -> None:
+    """Clear the kubectl cache."""
+    global _kubectl_cache_hits, _kubectl_cache_misses, _kubectl_cache
+    lock = _get_cache_lock()
+    with lock:
+        _kubectl_cache.clear()
+        _kubectl_cache_hits = 0
+        _kubectl_cache_misses = 0
 
 
 def _normalize_created_at(value):
@@ -42,11 +109,47 @@ def _normalize_created_at(value):
     return ""
 
 
-def run_cmd(cmd, timeout=30):
-    """Run a command and return (returncode, stdout, stderr)."""
+def run_cmd(cmd, timeout=30, use_cache: bool = True, cache_ttl: float = 30.0) -> Tuple[int, str, str]:
+    """Run a command and return (returncode, stdout, stderr).
+    
+    Args:
+        cmd: Command to run (list or string)
+        timeout: Command timeout in seconds
+        use_cache: Whether to use caching for this command
+        cache_ttl: Cache TTL in seconds for this command
+        
+    Returns:
+        Tuple of (returncode, stdout, stderr)
+    """
+    # Convert list to string for hashing
+    if isinstance(cmd, list):
+        cmd_str = ' '.join(cmd)
+        cmd_for_hash = cmd_str
+    else:
+        cmd_str = cmd
+        cmd_for_hash = cmd
+    
+    # Try to get from cache
+    if use_cache:
+        cache_key = hashlib.sha256(cmd_for_hash.encode()).hexdigest()
+        hit, cached_result = _get_kubectl_cache(cache_key, cache_ttl)
+        if hit:
+            # Return cached result
+            return cached_result
+    
+    # Execute command
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        return result.returncode, result.stdout.strip(), result.stderr.strip()
+        rc = result.returncode
+        stdout = result.stdout.strip()
+        stderr = result.stderr.strip()
+        
+        # Cache the result
+        if use_cache:
+            cache_value = (rc, stdout, stderr)
+            _set_kubectl_cache(cache_key, cache_value)
+        
+        return rc, stdout, stderr
     except Exception as e:
         return 1, "", str(e)
 
