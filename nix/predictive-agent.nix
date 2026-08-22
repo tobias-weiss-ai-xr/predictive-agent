@@ -111,7 +111,7 @@ pkgs.dockerTools.buildLayeredImage {
       "SMTP_USE_TLS=true"
       "WEBHOOK_URL="
       "WEBHOOK_TIMEOUT=10"
-      "PYTHONPATH=/opt/predictive-agent"
+      "PYTHONPATH=/opt/predictive-agent:${pkgs.python3Packages.psutil}/lib/python3.14/site-packages"
       "PREDICTION_BASE_RISK=0.15"
       "PATH=${pkgs.python3}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:${pkgs.docker-client}/bin:${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin:${pkgs.gnused}/bin:${pkgs.procps}/bin:${pkgs.kubectl}/bin"
       "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
