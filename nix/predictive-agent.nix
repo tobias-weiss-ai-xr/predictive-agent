@@ -76,7 +76,7 @@ pkgs.dockerTools.buildLayeredImage {
     predictiveAgentPackage
     etcFiles
     # Python packages for optimizations
-    (python3Packages.psutil.override { python = pkgs.python3; })  # For CPU monitoring
+    (pkgs.python3Packages.psutil.override { python = pkgs.python3; })  # For CPU monitoring
   ];
 
   config = {
